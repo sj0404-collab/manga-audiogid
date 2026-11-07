@@ -1,0 +1,13 @@
+# сборка
+build/
+app/build/
+.gradle/
+*.iml
+.idea/
+local.properties
+
+# ключ подписи не публикуем: в CI он из секретов
+keystore.properties
+keystore/
+*.jks
+*.keystore

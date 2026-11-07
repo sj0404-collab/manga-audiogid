@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- аудиожурнал и лог: отдаём во внешние приложения через FileProvider -->
+    <files-path name="audio_journal" path="audio_journal/" />
+    <files-path name="files_root" path="." />
+    <cache-path name="cache_root" path="." />
+</paths>
