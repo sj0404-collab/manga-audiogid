@@ -280,6 +280,15 @@ class PageTextBuilder(
             }
         }
         if (decorative > 0) warnings += "пропущено нетекстовых строк: $decorative"
+        // Диагностика: рамка на треть страницы почти всегда значит «слиплись облачка».
+        // Без этой строки в журнале причину «огромной рамки» не видно (1.6.18).
+        val pageAreaWarn = pageWidth.toFloat() * pageHeight.toFloat()
+        if (pageAreaWarn > 0f) {
+            replicas.firstOrNull { it.box.area > pageAreaWarn * 0.3f }?.let { big ->
+                val pct = (big.box.area / pageAreaWarn * 100).toInt()
+                warnings += "рамка реплики ${big.index + 1} занимает $pct% страницы"
+            }
+        }
         val finalReplicas = replicas.filter { it.text.isNotBlank() || it.needsReview }
         val bandIndexes = Bands.assign(finalReplicas.map { it.box })
         val bandCount = Bands.count(bandIndexes).coerceAtLeast(if (finalReplicas.isEmpty()) 0 else 1)

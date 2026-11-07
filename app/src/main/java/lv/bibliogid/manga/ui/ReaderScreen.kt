@@ -661,7 +661,14 @@ private fun FramesSheet(vm: AppViewModel) {
                     FilterChip(
                         selected = vm.frameShape == key,
                         onClick = { vm.applyFrameShape(key) },
-                        label = { Text(label, style = MaterialTheme.typography.labelSmall) }
+                        label = {
+                            Text(
+                                label,
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
                     )
                 }
             }
@@ -774,7 +781,9 @@ private fun PageTextSheet(vm: AppViewModel) {
             Spacer(Modifier.height(12.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
-                    onClick = { vm.recognizeAgain(fullPage = true) },
+                    // Именно обычный режим: «вся страница одним блоком» давала одну
+                    // рамку-гигант на все облачка (журнал 1.6.18).
+                    onClick = { vm.recognizeAgain(fullPage = false) },
                     modifier = Modifier.weight(1f)
                 ) { Text("Распознать заново", style = MaterialTheme.typography.labelMedium) }
                 Button(

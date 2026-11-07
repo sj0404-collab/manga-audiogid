@@ -168,4 +168,34 @@ class PageTextBuilderTest {
         )
         assertTrue("пустая область стала репликой", page.replicas.isEmpty())
     }
+
+    @Test
+    fun `страница одним блоком всё равно делится по облачкам`() {
+        // режим «вся страница одним блоком» (кнопка «Распознать заново» до 1.6.19):
+        // одна реплика на весь столбец и рамка-гигант. Теперь блок режется по строкам.
+        val r = TextRegion(
+            box = Box(40f, 290f, 660f, 1450f),
+            type = RegionType.FREE_TEXT,
+            rawLines = listOf(
+                "СЛУШАЙ, Я ПОДУ-", "МАЛА О КОЛИЧЕСТВЕ", "СПОСОБОВ...",
+                "ЭТО ДЕЙСТ-", "ВИТЕЛЬНО НЕОБ-", "ХОДИМО?",
+                "КОНЕЧНО!", "ОН БЫСТРО ЭТО", "ЗАМЕТИТ!"
+            ),
+            lineBoxes = listOf(
+                Box(300f, 300f, 600f, 340f), Box(300f, 346f, 600f, 386f), Box(300f, 392f, 600f, 432f),
+                Box(310f, 700f, 590f, 740f), Box(310f, 746f, 590f, 786f), Box(310f, 792f, 590f, 832f),
+                Box(320f, 1100f, 580f, 1140f), Box(320f, 1146f, 580f, 1186f), Box(320f, 1192f, 580f, 1232f)
+            )
+        )
+        val page = builder.build(
+            listOf(r), ReadingMode.WEBTOON_VERTICAL, "test", 1,
+            pageWidth = 700, pageHeight = 3081
+        )
+        assertEquals(3, page.replicas.size)
+        assertTrue(page.replicas[0].text.contains("способов", ignoreCase = true))
+        assertTrue(page.replicas[1].text.contains("необходимо", ignoreCase = true))
+        assertTrue(page.replicas[2].text.contains("заметит", ignoreCase = true))
+        // и рамки больше не на полстраницы
+        assertTrue(page.replicas.all { it.box.height < 400f })
+    }
 }

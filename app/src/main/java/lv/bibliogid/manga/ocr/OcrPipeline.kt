@@ -47,11 +47,17 @@ class OcrPipeline {
         }
 
         val regions = if (fullPage) {
+            // «Вся страница одним блоком» — режим для движков, которые не дают геометрию.
+            // Раньше здесь ТЕРЯЛИСЬ рамки строк, и страница превращалась в ОДНУ реплику
+            // с рамкой на весь столбец (журнал 1.6.18: «сейчас включены · 1 шт.», а на
+            // странице четыре облачка). Теперь рамки строк передаются дальше, и
+            // RegionSplitter режет блок по облачкам, как в обычном режиме.
             listOf(
                 TextRegion(
                     box = lines.map { it.box }.reduce { a, b -> a.union(b) },
                     type = lv.bibliogid.manga.core.ocr.RegionType.FREE_TEXT,
-                    rawLines = lines.map { it.text }
+                    rawLines = lines.map { it.text },
+                    lineBoxes = lines.map { it.box }
                 )
             )
         } else {

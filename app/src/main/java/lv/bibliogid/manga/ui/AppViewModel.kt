@@ -466,7 +466,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * распознанный текст подхватываться не должен — он собран прежним движком.
      */
     private fun cacheKey(manga: MangaItem, chapter: ChapterEntry, page: Int): String =
-        "${manga.entry.title}/${chapter.name}/$page/${settings.localEngine}-ocr28"
+        "${manga.entry.title}/${chapter.name}/$page/${settings.localEngine}-ocr29"
 
     private fun closeSource() {
         stopReading()
@@ -691,6 +691,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (manga != null && chapter != null) {
             textStore.forgetPage(cacheKey(manga, chapter, pageIndex))
         }
+        statusMessage = "Распознаю страницу заново…"
         recognizePage(fullPage)
     }
 
