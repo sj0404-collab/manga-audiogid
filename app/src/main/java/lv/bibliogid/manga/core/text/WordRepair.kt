@@ -40,9 +40,14 @@ object WordRepair {
         val trail = token.takeLastWhile { !it.isLetter() }
         val core = token.substring(lead.length, token.length - trail.length)
         if (core.length < 4) return null
-        // слово с заглавной — это может быть имя: буквы вставляем только в явно частые слова
-        val minCount = if (core.first().isUpperCase()) 2000.0 else 100.0
-        val fixed = repairWord(core, minCount) ?: return null
+        // слово с заглавной — это может быть имя: буквы вставляем в СУЩЕСТВИТЕЛЬНЫЕ только
+        // когда они явно частые. Прилагательные и глаголы чиним всегда: имена так не
+        // выглядят, а «Равноушный» -> «равнодушный» нужно (порог 2000 его блокировал).
+        val capitalized = core.first().isUpperCase()
+        val minCount = if (capitalized) 2000.0 else 100.0
+        // запас над вторым кандидатом для слов с заглавной больше: имя не должно «починиться»
+        val minMargin = if (capitalized) 3.0 else 2.0
+        val fixed = repairWord(core, minCount, minMargin) ?: return null
         // не терять заглавную: «Серце» -> «Сердце», а не «сердце»
         val cased = if (core.first().isUpperCase()) fixed.replaceFirstChar { it.uppercaseChar() } else fixed
         return lead + cased + trail
@@ -55,13 +60,13 @@ object WordRepair {
      * Для слов с заглавной буквы порог выше: «Карсель» (имя) не должно становиться
      * «карусель», а «Серце» -> «Сердце» — можно.
      */
-    fun repairWord(core: String, minCount: Double = 100.0): String? {
+    fun repairWord(core: String, minCount: Double = 100.0, minMargin: Double = 2.0): String? {
         if (!WordFrequencies.isLoaded) return null
         val low = core.lowercase().replace('ё', 'е')
         if (WordFrequencies.contains(low)) return null      // слово нормальное
 
         // Сначала — пропущенная буква: «равноушны» -> «равнодушны», «серце» -> «сердце».
-        repairMissingLetter(low, minCount)?.let { return it }
+        repairMissingLetter(low, minCount, minMargin)?.let { return it }
 
         var best: String? = null
         var bestScore = Double.NEGATIVE_INFINITY
@@ -116,6 +121,16 @@ object WordRepair {
 
     private const val RUS_LETTERS = "абвгдежзийклмнопрстуфхцчшщъыьэюя"
 
+    /** Окончания прилагательных, причастий и глаголов (имена так почти не кончаются). */
+    private val INFLECTED = listOf(
+        "ый", "ий", "ой", "ая", "яя", "ое", "ее", "ые", "ие", "ого", "его", "ому", "ему",
+        "ым", "им", "ых", "их", "ую", "юю", "ешь", "ишь", "ет", "ит", "ют", "ут", "ат", "ят",
+        "ала", "ало", "али", "ться", "тся", "ющий", "вший", "нный", "тый",
+        "ны", "на", "но", "ен"
+    )
+
+    private fun isInflected(w: String): Boolean = INFLECTED.any { w.endsWith(it) }
+
     /**
      * Починка слова, в котором OCR ПОТЕРЯЛ букву: «равноушны» -> «равнодушны», «серце» -> «сердце».
      *
@@ -123,7 +138,7 @@ object WordRepair {
      * (или лучший заметно вероятнее второго) — иначе вставлять буквы в имена и незнакомые
      * слова было бы опаснее, чем оставить как есть.
      */
-    private fun repairMissingLetter(low: String, minCount: Double): String? {
+    private fun repairMissingLetter(low: String, minCount: Double, minMargin: Double): String? {
         if (low.length !in 5..18) return null
         var best: String? = null
         var bestScore = Double.NEGATIVE_INFINITY
@@ -138,9 +153,13 @@ object WordRepair {
             }
         }
         val found = best ?: return null
-        // вариант должен быть реально частым и выигрывать у второго с запасом
-        if (WordFrequencies.count(found) < minCount) return null
-        if (bestScore - secondScore < 2.0) return null
+        // вариант должен быть реально частым и выигрывать у второго с запасом.
+        // Для прилагательных/глаголов порог ниже: имена существительными-прилагательными
+        // на «-ый», «-ая», «-ишь» не заканчиваются, а «равнодушный» (420) при пороге 2000
+        // не чинился, если слово стояло с заглавной буквы.
+        val need = if (isInflected(found)) minOf(minCount, 100.0) else minCount
+        if (WordFrequencies.count(found) < need) return null
+        if (bestScore - secondScore < minMargin) return null
         return found
     }
 

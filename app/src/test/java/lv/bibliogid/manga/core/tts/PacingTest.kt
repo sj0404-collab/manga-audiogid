@@ -90,4 +90,25 @@ class PacingTest {
         assertFalse(TtsScript.isFiller("Стоп. Всё не должно быть так."))
         assertFalse(TtsScript.isFiller("Разве?"))
     }
+
+    @Test
+    fun `слово, разорванное границей реплик, склеивается`() {
+        // журнал 1.6.15: «Так гор.» + «Дишься этим.» звучало как «так гор… дишься»
+        val out = TtsScript.build(
+            listOf(replica("Так гор.", 0), replica("Дишься этим.", 1)),
+            1.0f
+        )
+        assertEquals(1, out.size)
+        assertEquals("Так гордишься этим.", out[0].text)
+    }
+
+    @Test
+    fun `разные предложения не склеиваются`() {
+        val out = TtsScript.build(
+            listOf(replica("Он ушёл.", 0), replica("Дишься этим.", 1), replica("Да.", 2)),
+            1.0f
+        )
+        assertTrue(out.size >= 2)
+        assertTrue(out.none { it.text.contains("ушёлдишься") })
+    }
 }

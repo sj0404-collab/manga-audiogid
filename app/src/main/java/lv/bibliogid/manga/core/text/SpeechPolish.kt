@@ -45,7 +45,46 @@ object SpeechPolish {
             recordDiff(s, split, fixes)
             s = split
         }
+
+        // 4) пропавший пробел на стыке с союзом «и»: «Ему всего 11 лети я забыла»
+        //    — OCR склеил «лет» + «и», а «лети» есть в словаре, поэтому обычное
+        //    разлепливание молчало, и голос читал «лети» вместо «лет и».
+        val gluedAnd = fixGluedConjunction(s)
+        if (gluedAnd != s) {
+            recordDiff(s, gluedAnd, fixes)
+            s = gluedAnd
+        }
         return Result(s, fixes)
+    }
+
+    /** Местоимения, после которых «…и» почти всегда = «… + и». */
+    private val PRONOUNS = listOf("я", "он", "она", "они", "мы", "вы", "ты")
+
+    /**
+     * «лети я» -> «лет и я», «годи он» -> «год и он».
+     *
+     * Условия жёсткие, чтобы не портить нормальные слова:
+     *  - слово кончается на «и», без него остаётся НАСТОЯЩЕЕ слово (а не обрубок словаря);
+     *  - основа очень частая (в словаре > 5000) — «дети»/«люди» сюда не попадают,
+     *    потому что «дет» в словаре нет, а «люд» встречается 268 раз;
+     *  - следующее слово — местоимение («лети я», «лети он»).
+     */
+    private fun fixGluedConjunction(line: String): String {
+        if (line.length < 6) return line
+        val re = Regex("(\\p{L}{3,}и)\\s+(" + PRONOUNS.joinToString("|") + ")(?![\\p{L}])", RegexOption.IGNORE_CASE)
+        return re.replace(line) { m ->
+            val word = m.groupValues[1]
+            // «Лети, я сказал.» (OCR потерял запятую) — не трогаем: слово в начале фразы
+            val before = line.substring(0, m.range.first).trimEnd()
+            if (before.isEmpty() || before.last() in ".!?…:;—-\"«") return@replace m.value
+            val base = word.dropLast(1).lowercase().replace('ё', 'е')
+            if (!WordFrequencies.contains(base)) return@replace m.value
+            if (WordFrequencies.count(base) < 5000.0) return@replace m.value
+            // основа должна кончаться на согласную: «лет и», «год и», но не «ночи и»
+            if (base.last() in "аеиоуыэюяйьъ") return@replace m.value
+            val tail = word.last()
+            word.dropLast(1) + " " + tail + m.value.substring(word.length)
+        }
     }
 
     /** Буквы, которые OCR ставит вместо цифры после дефиса: «2-з» вместо «2-3». */

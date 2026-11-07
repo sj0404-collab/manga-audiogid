@@ -103,7 +103,50 @@ object TtsScript {
                 out.add(TtsUtterance(c, r.index, Pacing.replicaDurationMs(c.length, speed, cfg)))
             }
         }
+        return mergeTornWords(out, speed, cfg)
+    }
+
+    /**
+     * Склейка слова, разорванного ГРАНИЦЕЙ РЕПЛИК: «Так гор.» + «Дишься этим.»
+     * Голос иначе читает «так гор… дишься», и это слышно как «город дишся».
+     *
+     * Склеиваем только когда словарь подтверждает слово после склейки ([WordMender.mend]
+     * меняет текст), поэтому «Он ушёл.» + «Дишься» останется как есть.
+     */
+    private fun mergeTornWords(
+        list: List<TtsUtterance>,
+        speed: Float,
+        cfg: PacingConfig
+    ): List<TtsUtterance> {
+        if (list.size < 2) return list
+        val out = ArrayList<TtsUtterance>(list.size)
+        for (u in list) {
+            val prev = out.lastOrNull()
+            val joined = if (prev == null) null else tornJoin(prev.text, u.text)
+            if (prev != null && joined != null) {
+                val ms = Pacing.replicaDurationMs(joined.length, speed, cfg)
+                out[out.size - 1] = TtsUtterance(joined, prev.replicaIndex, ms)
+            } else {
+                out.add(u)
+            }
+        }
         return out
+    }
+
+    /** Результат склейки, если словарь подтверждает склеенное слово, иначе null. */
+    private fun tornJoin(prev: String, next: String): String? {
+        val a = prev.trim()
+        val b = next.trim()
+        if (a.isEmpty() || b.isEmpty()) return null
+        if (!b.first().isUpperCase()) return null
+        // хвост перед точкой должен быть коротким огрызком слова
+        val lastWord = a.trimEnd('.', '!', '?', '…').substringAfterLast(' ').trim('.', ',', '!', '?', '…', ':', ';')
+        if (lastWord.length !in 1..5) return null
+        if (!a.endsWith(".") && !a.endsWith(",")) return null
+        val joined = lv.bibliogid.manga.core.text.WordMender.mend("$a $b")
+        val before = ("$a $b").split(' ').size
+        if (joined.split(' ').size >= before) return null
+        return joined
     }
 
     /**

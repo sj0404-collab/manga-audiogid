@@ -21,6 +21,10 @@ object SpokenText {
             m.value.replace(" ", "")
         }
 
+        // Междометия капсом («ХММ», «МММ», «ЭЭЭ») TTS читает ПО БУКВАМ — «ха-эм-эм».
+        // Поэтому приводим их к обычному виду и схлопываем повторы: «хмммм» -> «Хм».
+        s = s.split(' ').joinToString(" ") { token -> interjection(token) ?: token }
+
         // КАПС-слова: имена и всё, чего нет в словаре, — в обычный регистр
         s = s.split(' ').joinToString(" ") { token ->
             val core = token.trim { !it.isLetter() }
@@ -38,5 +42,27 @@ object SpokenText {
             }
         }
         return s
+    }
+
+    /** «ХММ» -> «Хм», «ммм» -> «Мм», «эээ» -> «Э», «ааа» -> «А-а». null — не междометие. */
+    fun interjection(token: String): String? {
+        val lead = token.takeWhile { !it.isLetter() }
+        val trail = token.takeLastWhile { !it.isLetter() }
+        if (trail.length >= token.length) return null
+        val core = token.substring(lead.length, token.length - trail.length)
+        if (core.length < 2) return null
+        val c = core.lowercase().replace("-", "")
+        val all = { ch: Char -> c.length >= 2 && c.all { it == ch } }
+        val nice = when {
+            c.matches(Regex("х+м+")) -> "Хм"
+            all('м') -> "Мм"
+            all('э') -> "Э"
+            all('а') -> "А-а"
+            all('о') -> "О"
+            all('у') -> "У"
+            all('ы') -> "Ы"
+            else -> return null
+        }
+        return lead + nice + trail
     }
 }
