@@ -21,6 +21,7 @@ import lv.bibliogid.manga.core.library.MangaEntry
 import lv.bibliogid.manga.core.ocr.PageText
 import lv.bibliogid.manga.core.ocr.Replica
 import lv.bibliogid.manga.core.text.WordFrequencies
+import lv.bibliogid.manga.core.text.WordForms
 import lv.bibliogid.manga.core.ocr.ReadingMode
 import lv.bibliogid.manga.core.tts.Pacing
 import lv.bibliogid.manga.core.tts.TtsScript
@@ -265,6 +266,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // частотный словарь для восстановления пробелов (assets/ru_freq.txt, ~47 000 словоформ)
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { WordFrequencies.load(getApplication<Application>().assets) }
+            // В журнале должно быть видно, ЧЕМ читали и загружен ли словарь: без этого
+            // не понять, почему на телефоне не сработала починка слов.
+            val ver = runCatching {
+                val pi = getApplication<Application>().packageManager
+                    .getPackageInfo(getApplication<Application>().packageName, 0)
+                "${pi.versionName} (${pi.versionCode})"
+            }.getOrDefault("?")
+            val dict = if (WordFrequencies.isLoaded) "${WordFrequencies.size} словоформ" else "НЕ ЗАГРУЖЕН"
+            if (WordFrequencies.isLoaded) runCatching { WordForms.ensureBuilt() }
+            AppLog.d("log", "версия $ver · движок ${settings.localEngine} · словарь: $dict")
         }
         tts.init { ok ->
             ttsReady = ok
@@ -331,7 +342,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * распознанный текст подхватываться не должен — он собран прежним движком.
      */
     private fun cacheKey(manga: MangaItem, chapter: ChapterEntry, page: Int): String =
-        "${manga.entry.title}/${chapter.name}/$page/${settings.localEngine}-ocr23"
+        "${manga.entry.title}/${chapter.name}/$page/${settings.localEngine}-ocr24"
 
     private fun closeSource() {
         stopReading()

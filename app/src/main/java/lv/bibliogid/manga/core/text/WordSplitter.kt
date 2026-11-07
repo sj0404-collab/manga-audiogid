@@ -56,6 +56,15 @@ object WordSplitter {
     /** Минимальный выигрыш по log-вероятности, чтобы тронуть словарное слово. */
     private const val MIN_GAIN = 4.0
 
+    /**
+     * Короткое «слово» с крошечной частотой — мусор корпуса («ру» 650, «ча» 1019, «тьс» 517).
+     * Такие куски нельзя считать настоящими словами при делении: иначе «обручаться»
+     * превращалось в «об ру ча тьс я», а это хуже исходного.
+     */
+    private fun isJunkShort(w: String): Boolean = w.length <= 3 && WordFrequencies.count(w) < JUNK_COUNT
+
+    private const val JUNK_COUNT = 3000.0
+
     private const val UNKNOWN_CHAR_COST = -13.8   // ln(1e-6) за символ неизвестного слова
     private const val MAX_WORD = 20
     private const val PUNCT = ".,!?…:;—–-'()«»\"„“”"
@@ -153,7 +162,7 @@ object WordSplitter {
             if (l in PARTICLES) {
                 val tailOk = when {
                     r.length == 1 -> atLineStart && r[0] in TAIL_SINGLES
-                    else -> WordFrequencies.contains(r)
+                    else -> WordFrequencies.contains(r) && !isJunkShort(r)
                 }
                 if (tailOk) {
                     val tailScore = if (r.length == 1) {
@@ -199,6 +208,7 @@ object WordSplitter {
             val l = s.substring(0, i)
             val r = s.substring(i)
             if (!WordFrequencies.contains(l) || !WordFrequencies.contains(r)) continue
+            if (isJunkShort(l) || isJunkShort(r)) continue
             val score = WordFrequencies.logProb(l) + WordFrequencies.logProb(r)
             if (score > bestScore) { bestScore = score; bestAt = i }
         }
@@ -245,6 +255,8 @@ object WordSplitter {
         val singles = parts.count { it.length == 1 }
         val tooShort = parts.any { it.length == 1 && it[0] !in SINGLE_LETTER_WORDS }
         if (parts.size > 1 && (singles > 1 || tooShort)) return s
+        // «об ру ча тьс я»: мусорные огрызки словаря — не слова
+        if (parts.any { isJunkShort(it) }) return s
         return parts.joinToString(" ")
     }
 

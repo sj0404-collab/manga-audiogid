@@ -76,7 +76,17 @@ object TtsScript {
         for (r in replicas) {
             // «молчание» (многоточие) видно рамкой на странице, но голосом не читается
             if (r.silence) continue
-            val text = r.text.trim()
+            // Последняя полировка ПЕРЕД синтезом: текст страницы мог прийти из кеша,
+            // собранного прежней версией («сераце дракона», «небудешь», «Может лианна»).
+            val polished = lv.bibliogid.manga.core.text.SpeechPolish.polish(r.text)
+            if (polished.fixes.isNotEmpty()) {
+                lv.bibliogid.manga.core.util.AppLog.d(
+                    "tts",
+                    "поправлено перед озвучкой: " +
+                        polished.fixes.joinToString(", ") { "«${it.from}» → «${it.to}»" }
+                )
+            }
+            val text = polished.text.trim()
             if (text.isEmpty()) continue
             // Короткий обрывок-звук («Еу.», «БАМ!», «Хмм.») — не реплика. В журнале 1.6.9
             // такие читались голосом: «стр.5 реплика 4: Еу.», «стр.7 реплика 2: Сто.».

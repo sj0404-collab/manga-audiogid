@@ -52,6 +52,9 @@ object WordFrequencies {
 
     fun contains(word: String): Boolean = freqMap.containsKey(normalize(word))
 
+    /** Все словарные словоформы (для построения основ и морфологической проверки). */
+    fun words(): Set<String> = freqMap.keys
+
     fun count(word: String): Double = freqMap[normalize(word)] ?: 0.0
 
     /** log-вероятность слова (для DP). */

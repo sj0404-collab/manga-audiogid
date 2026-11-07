@@ -19,7 +19,6 @@ object WordRepair {
      */
     private val CONFUSE: Map<Char, List<Char>> = mapOf(
         'а' to listOf('д'),   // Д рисуют как A
-        'е' to listOf('ё'),
         'ь' to listOf('ъ'),
         'и' to listOf('й')
     )
@@ -60,8 +59,7 @@ object WordRepair {
         for (p in positions) {
             for (alt in CONFUSE.getValue(low[p])) {
                 val cand = low.substring(0, p) + alt + low.substring(p + 1)
-                if (!WordFrequencies.contains(cand)) continue
-                val score = WordFrequencies.logProb(cand)
+                val score = candidateScore(cand) ?: continue
                 if (score > bestScore) { bestScore = score; best = cand }
             }
         }
@@ -79,8 +77,7 @@ object WordRepair {
                             sb.setCharAt(p, a1)
                             sb.setCharAt(q, a2)
                             val cand = sb.toString()
-                            if (!WordFrequencies.contains(cand)) continue
-                            val score = WordFrequencies.logProb(cand)
+                            val score = candidateScore(cand) ?: continue
                             if (score > bestScore) { bestScore = score; best = cand }
                         }
                     }
@@ -89,5 +86,19 @@ object WordRepair {
         }
         return best
     }
+
+    /**
+     * Оценка кандидата: точная словоформа словаря — её log-вероятность,
+     * подходящая ОСНОВА («обдумываете» при словарном «обдумываю») — низкий фиксированный балл.
+     * Так точное слово всегда выигрывает у «морфологически похожего».
+     */
+    private fun candidateScore(cand: String): Double? {
+        if (WordFrequencies.contains(cand)) return WordFrequencies.logProb(cand)
+        if (WordForms.isPlausible(cand)) return STEM_ONLY_SCORE
+        return null
+    }
+
+    /** Балл для кандидата, подтверждённого только основой (всегда хуже точного слова). */
+    private const val STEM_ONLY_SCORE = -25.0
 
 }

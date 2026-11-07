@@ -15,6 +15,9 @@ object WordMender {
 
     private val SINGLE = setOf('в', 'и', 'а', 'с', 'к', 'у', 'о', 'я', 'б', 'ж', 'э')
 
+    /** Хвосты-частицы, которые OCR отрывает от слова: «творите» + «сь», «смея» + «ться». */
+    private val GLUE_TAILS = setOf("сь", "ся", "шь", "т", "ться", "тся")
+
     fun mend(line: String): String {
         if (line.isBlank()) return line
         val tokens = line.split(' ').filter { it.isNotBlank() }.toMutableList()
@@ -36,12 +39,25 @@ object WordMender {
                 if (parts.any { letters(it).isEmpty() }) continue
                 val joinedLetters = letters(parts.joinToString(""))
                 if (joinedLetters.length <= 2) continue
-                if (!WordFrequencies.contains(joinedLetters)) continue
-                // все куски — самостоятельные слова? тогда не трогаем («Ким Мувон»)
+                // Точная словоформа — как раньше. Плюс разрешаем приклеить хвост-частицу
+                // («При» + «творите» + «сь» -> «притворитесь»), даже если формы нет в словаре:
+                // для этого хвост должен быть из списка и основа — настоящей.
+                val tail = letters(parts.last())
+                val glueTail = tail in GLUE_TAILS && WordForms.isPlausible(joinedLetters)
+                if (!WordFrequencies.contains(joinedLetters) && !glueTail) continue
+                // «Но» + «я» -> «Ноя» (223 в словаре): оба куска — настоящие слова,
+                // а склейка редкая. Не склеиваем.
+                if (!glueTail && WordFrequencies.count(joinedLetters) < 500.0 &&
+                    parts.all { WordFrequencies.contains(letters(it)) }
+                ) continue
+                // все куски — самостоятельные слова? тогда не трогаем («Ким Мувон»),
+                // кроме случая приклеенного хвоста-частицы («творите» + «сь»).
                 val allRealWords = parts.all { it.length > 2 && WordFrequencies.contains(letters(it)) }
-                if (allRealWords) continue
-                // среди кусков должен быть огрызок (иначе это просто два слова)
-                if (parts.none { letters(it).length <= 2 }) continue
+                if (allRealWords && !glueTail) continue
+                // огрызок (≤2 букв) ИЛИ след переноса строки («Так гор.» + «Дишься»)
+                val hasShortFragment = parts.any { letters(it).length <= 2 }
+                val lineBreakArtifact = parts.dropLast(1).any { it.endsWith(".") || it.endsWith(",") }
+                if (!hasShortFragment && !lineBreakArtifact) continue
                 var mergedToken = parts.joinToString("") { it }
                 // пунктуация последнего куска сохраняется, лишняя из середины уходит
                 mergedToken = mergedToken.replace(Regex("[.,!?…:;]+(?=.)"), "")
