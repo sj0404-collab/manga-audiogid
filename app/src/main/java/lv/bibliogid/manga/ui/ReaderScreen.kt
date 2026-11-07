@@ -105,7 +105,10 @@ fun ReaderScreen(vm: AppViewModel) {
                 vm.setContinuous(!continuous)
             }
             ToolbarIcon("🔍") { vm.showTextPanel = true }
-            ToolbarIcon("🎤") { if (vm.speaking) vm.toggleReading() else vm.startReading() }
+            ToolbarIcon("🎤") {
+                // от видимого места: после прокрутки читаем не с верха страницы
+                if (vm.speaking) vm.toggleReading() else vm.startReading(fromSpot = true)
+            }
             FrameToggle(vm)
             ToolbarIcon("Aa") { vm.showTextPanel = true }
             ToolbarIcon("≡") { vm.openJournal() }
@@ -344,6 +347,12 @@ private fun PageView(vm: AppViewModel, index: Int, fillWidth: Boolean = false) {
             val pageHPx = with(density) { (screenW / aspect).toPx() }
             val viewportPx = with(density) { cfg.screenHeightDp.dp.toPx() }
             val scroll = rememberScrollState()
+            // длинная вебтун-страница: доля прокрутки внутри страницы — тоже «текущее место»
+            LaunchedEffect(scroll.value, index) {
+                if (vm.pageIndex == index && pageHPx > 0f && !vm.speaking) {
+                    vm.onScrollSpot(index, scroll.value / pageHPx)
+                }
+            }
             LaunchedEffect(vm.activeReplica, index, vm.speaking) {
                 if (!vm.speaking || index != vm.pageIndex) return@LaunchedEffect
                 val fraction = vm.activeReplicaFraction() ?: return@LaunchedEffect
@@ -524,6 +533,14 @@ private fun ContinuousReader(vm: AppViewModel) {
     val cfg = androidx.compose.ui.platform.LocalConfiguration.current
     val viewportPx = with(density) { cfg.screenHeightDp.dp.toPx() }
     val screenWidthPx = with(density) { cfg.screenWidthDp.dp.toPx() }
+    // Прокрутка = «текущее место». Без этого OCR и ▶ работали от старого pageIndex,
+    // и на середине главы сканирование начиналось с самого верха.
+    val firstIdx = state.firstVisibleItemIndex
+    val firstOff = state.firstVisibleItemScrollOffset
+    LaunchedEffect(firstIdx, firstOff) {
+        val size = state.layoutInfo.visibleItemsInfo.firstOrNull { it.index == firstIdx }?.size ?: 0
+        if (size > 0) vm.onScrollSpot(firstIdx, firstOff.toFloat() / size)
+    }
     // автопрокрутка: при озвучке лента сама едет к читаемой реплике, без рывков
     LaunchedEffect(vm.pageIndex, vm.activeReplica, vm.speaking) {
         if (!vm.speaking) return@LaunchedEffect

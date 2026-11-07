@@ -124,8 +124,12 @@ class PageTextBuilder(
     ): PageText {
         // 1) склеиваем блоки, разрезанные полосами (иначе предложение рвётся на части)
         val blocks = BlockMerger.merge(regions.filter { it.rawLines.isNotEmpty() }, pageHeight)
+        // 1.5) регион, в который слиплись ДВА облачка («СТОП, ВСЁ…» + «ЭТО НЕ ЛЮБОВНЫЕ
+        // ОТНОШЕНИЯ!» на стр.20), режем по разрыву между строками — иначе чужие фразы
+        // звучат одной репликой и последние строки первой теряются.
+        val pieces = blocks.flatMap { RegionSplitter.split(it) }
         // 2) порядок чтения
-        val ordered = ReadingOrder.order(blocks, mode)
+        val ordered = ReadingOrder.order(pieces, mode)
         val replicas = ArrayList<Replica>(ordered.size)
         var latin = 0
         var rawLines = 0
@@ -171,6 +175,22 @@ class PageTextBuilder(
                     )
                     return@forEachIndexed
                 }
+                // Облачко без единой буквы, но размером в треть страницы — это пустая
+                // «ванна» на рисунке, а не реплика. В журнале 1.6.16 такая область дала
+                // рамку на 38 % высоты страницы и «съела» соседние облачка.
+                val pageArea = pageWidth.toFloat() * pageHeight.toFloat()
+                val hugeEmpty = !fallback.any { it.isLetter() } && pageArea > 0f &&
+                    region.box.area > pageArea * 0.03f
+                if (hugeEmpty) {
+                    decorative++
+                    lv.bibliogid.manga.core.util.AppLog.d(
+                        "ocr",
+                        "пустая область пропущена [${region.box.left.toInt()},${region.box.top.toInt()}," +
+                            "${region.box.right.toInt()},${region.box.bottom.toInt()}]: " +
+                            "${(region.box.area / pageArea * 100).toInt()}% страницы, букв нет"
+                    )
+                    return@forEachIndexed
+                }
                 val fallbackReason = DecorativeFilter.reason(fallback, region.box, pageWidth, pageHeight)
                 if (fallbackReason != null) {
                     decorative++
@@ -197,9 +217,21 @@ class PageTextBuilder(
             // облачка становилась отдельной репликой, и текст читался «по кусочкам»:
             // «ОДНАКО.», «Я НИЧЕГО НЕ МОГУ ПОДЕЛАТЬ.», «ЕСЛИ ЛЮДИ ПОЙМУТ…».
             // Теперь облачко звучит целиком, пауза — только между облачками.
-            val joined = BubbleJoiner.join(res.replicas)
+            var joined = BubbleJoiner.join(res.replicas)
                 .replace(Regex("\\s{2,}"), " ")
                 .trim()
+            // Страховка: если строки региона не попали в реплику (слипшиеся облачка),
+            // дописываем их, чтобы «последние строки» не пропадали из озвучки.
+            val lost = LostLines.findLost(joined, region.rawLines)
+            if (lost.isNotEmpty()) {
+                joined = BubbleJoiner.join(listOf(joined) + lost)
+                    .replace(Regex("\\s{2,}"), " ")
+                    .trim()
+                lost.forEach { l ->
+                    lv.bibliogid.manga.core.util.AppLog.d("ocr", "строка дописана в реплику: $l")
+                }
+                if (lost.isNotEmpty()) warnings += "восстановлено строк: ${lost.size}"
+            }
             if (Silence.isSilence(joined)) {
                 replicas.add(
                     Replica(

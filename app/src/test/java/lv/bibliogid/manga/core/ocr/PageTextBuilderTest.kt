@@ -126,4 +126,46 @@ class PageTextBuilderTest {
         assertEquals(1, page.replicas.size)
         assertTrue(page.replicas[0].text.contains("дразнить", ignoreCase = true))
     }
+
+    // ------------------------------------- 1.6.17: слипшиеся облачка и пустые области
+
+    @Test
+    fun `слипшиеся облачка дают две реплики, и текст первой не теряется`() {
+        val r = TextRegion(
+            box = Box(140f, 100f, 610f, 886f),
+            type = RegionType.BUBBLE,
+            rawLines = listOf(
+                "СТОП, ВСЁ", "НЕ ДОЛЖНО БЫТЬ", "ТАК ПРОСТО!",
+                "ЭТО НЕ ЛЮБОВНЫЕ", "ОТНОШЕНИЯ!"
+            ),
+            lineBoxes = listOf(
+                Box(150f, 100f, 600f, 140f),
+                Box(140f, 146f, 610f, 186f),
+                Box(160f, 192f, 600f, 232f),
+                Box(150f, 800f, 600f, 840f),
+                Box(180f, 846f, 570f, 886f)
+            )
+        )
+        val page = builder.build(listOf(r), ReadingMode.WEBTOON_VERTICAL, "test", 1)
+        assertEquals(2, page.replicas.size)
+        assertTrue(page.replicas[0].text.contains("СТОП", ignoreCase = true))
+        assertTrue(page.replicas[0].text.contains("ТАК ПРОСТО", ignoreCase = true))
+        assertTrue(page.replicas[1].text.contains("ЛЮБОВНЫЕ", ignoreCase = true))
+        // ни одна строка не пропала из текста реплик
+        val all = page.replicas.joinToString(" ") { it.text.lowercase() }
+        for (w in listOf("стоп", "просто", "любовные", "отношения")) {
+            assertTrue("потерялось слово $w: $all", all.contains(w))
+        }
+    }
+
+    @Test
+    fun `пустая область во всю страницу не становится репликой`() {
+        // облачко-«ванна» без букв: 40 % высоты страницы
+        val r = TextRegion(Box(0f, 500f, 700f, 1500f), RegionType.BUBBLE, listOf("·"))
+        val page = builder.build(
+            listOf(r), ReadingMode.WEBTOON_VERTICAL, "test", 1,
+            pageWidth = 700, pageHeight = 3000
+        )
+        assertTrue("пустая область стала репликой", page.replicas.isEmpty())
+    }
 }

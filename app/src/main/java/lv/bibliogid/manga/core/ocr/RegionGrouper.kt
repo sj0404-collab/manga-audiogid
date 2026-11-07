@@ -30,7 +30,44 @@ object RegionGrouper {
             }
             groups.add(group)
         }
-        return groups.map { g -> bounds(g) to g.sortedBy { it.box.top } }
+        // Регион не должен перешагивать пустоту: в журнале 1.6.16 облачко «СТОП, ВСЁ НЕ ДОЛЖНО
+        // БЫТЬ ТАК ПРОСТО!» слиплось с «ЭТО НЕ ЛЮБОВНЫЕ ОТНОШЕНИЯ!» (600 px пустого облачка
+        // между ними) — получилась одна реплика на 38 % высоты страницы, и последние строки
+        // первой фразы не дочитывались.
+        return groups
+            .flatMap { splitBigGaps(it) }
+            .map { g -> bounds(g) to g.sortedBy { it.box.top } }
+    }
+
+    /** Разрыв, после которого строки — точно другое облачко (доли высоты строки). */
+    private const val SPLIT_GAP = 2.2f
+
+    /**
+     * Режет группу на части по большим вертикальным разрывам.
+     * Внутри одного облачка межстрочный интервал меньше высоты строки, поэтому
+     * всё, что дальше [SPLIT_GAP], — уже другое облачко (даже если группировщик
+     * склеил их из-за «съехавшей» высоты строки).
+     */
+    private fun splitBigGaps(group: List<OcrLine>): List<List<OcrLine>> {
+        if (group.size < 2) return listOf(group)
+        val sorted = group.sortedBy { it.box.top }
+        val heights = sorted.map { it.box.height }.sorted()
+        val median = heights[heights.size / 2].coerceAtLeast(4f)
+        val maxGap = median * SPLIT_GAP
+        val parts = ArrayList<MutableList<OcrLine>>()
+        var cur: MutableList<OcrLine>? = null
+        var bottom = 0f
+        for (line in sorted) {
+            if (cur != null && line.box.top - bottom > maxGap) cur = null
+            if (cur == null) {
+                cur = mutableListOf()
+                parts.add(cur)
+                bottom = line.box.bottom
+            }
+            cur.add(line)
+            if (line.box.bottom > bottom) bottom = line.box.bottom
+        }
+        return parts
     }
 
     private fun bounds(group: List<OcrLine>): Box =

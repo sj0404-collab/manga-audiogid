@@ -134,6 +134,37 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var pageAspect by mutableStateOf(0.7f)
 
     /**
+     * Где пользователь находится руками: страница под пальцем и доля её высоты (0…1).
+     *
+     * Раньше прокрутка никак не влияла на pageIndex: лента ехала, а OCR и ▶ работали
+     * от старых координат — отсюда «сканирует от самого верха, хотя я в середине главы».
+     */
+    var visiblePage by mutableStateOf(-1)
+        private set
+    var visibleFraction by mutableStateOf(0f)
+        private set
+
+    /**
+     * Лента сообщает, что видно на экране. Пока идёт озвучка или распознавание,
+     * страницу НЕ переключаем (нельзя рвать чтение), но позицию запоминаем —
+     * по ней выбирается реплика, с которой начинать.
+     */
+    fun onScrollSpot(page: Int, fractionInPage: Float) {
+        visiblePage = page
+        visibleFraction = fractionInPage.coerceIn(0f, 1f)
+        if (speaking || recognizing) return
+        if (page == pageIndex || page !in 0 until pageCount) return
+        val manga = currentManga ?: return
+        val chapter = currentChapter ?: return
+        headSpokenKey = null
+        pageIndex = page
+        activeReplica = -1
+        pageText = textStore.load(cacheKey(manga, chapter, page))?.withCacheFlag(true)
+        pageText?.let { pageTexts[page] = it }
+        prefetch(page + 1)
+    }
+
+    /**
      * Где на странице находится читаемая реплика: доля от высоты страницы (0…1).
      * По этому числу лента и постраничный режим подкручиваются к нужному облачку.
      */
@@ -406,7 +437,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * распознанный текст подхватываться не должен — он собран прежним движком.
      */
     private fun cacheKey(manga: MangaItem, chapter: ChapterEntry, page: Int): String =
-        "${manga.entry.title}/${chapter.name}/$page/${settings.localEngine}-ocr26"
+        "${manga.entry.title}/${chapter.name}/$page/${settings.localEngine}-ocr27"
 
     private fun closeSource() {
         stopReading()
@@ -657,13 +688,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun toggleReading() {
         when {
-            !speaking -> startReading()
+            !speaking -> startReading(fromSpot = true)
             paused -> resumeReading()
             else -> pauseReading()
         }
     }
 
-    fun startReading(fromIndex: Int = 0, allowReplay: Boolean = true) {
+    fun startReading(fromIndex: Int = 0, allowReplay: Boolean = true, fromSpot: Boolean = false) {
         val text = pageText
         if (text == null || text.replicas.none { it.text.isNotBlank() }) {
             // голос не может звучать без текста: сначала распознаём страницу, потом читаем
@@ -688,11 +719,39 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             text.replicas.forEach { spokenKeys.remove(replicaKey(pageIndex, it)) }
             AppLog.d("tts", "стр.${pageIndex + 1}: всё прочитано — начинаю страницу заново по кнопке")
         }
-        playIndex = fromIndex.coerceIn(0, script.size - 1)
+        // ▶ после прокрутки читает с того места, которое видно, а не с верха страницы
+        val startIndex = if (fromSpot && fromIndex == 0) {
+            val startReplica = startReplicaAtSpot(text)
+            val at = script.indexOfFirst { it.replicaIndex >= startReplica }
+            if (at < 0) fromIndex else at
+        } else fromIndex
+        playIndex = startIndex.coerceIn(0, script.size - 1)
         activeReplica = script[playIndex].replicaIndex
         spokenText = script[playIndex].text
+        if (fromSpot && playIndex > 0) {
+            AppLog.d(
+                "tts",
+                "стр.${pageIndex + 1}: начинаю с реплики ${activeReplica + 1} " +
+                    "(видно ${(visibleFraction * 100).toInt()} % страницы)"
+            )
+        }
         readJob = viewModelScope.launch { runFrom(playIndex) }
         prefetchText(pageIndex + 1)
+    }
+
+    /**
+     * Номер реплики, на которой сейчас «стоит» пользователь: первая реплика,
+     * чей центр ниже видимой доли страницы. Если он в самом верху — 0.
+     */
+    private fun startReplicaAtSpot(text: PageText): Int {
+        if (text.replicas.isEmpty()) return 0
+        if (text.pageHeight <= 0) return 0
+        if (visiblePage != pageIndex) return 0
+        val frac = visibleFraction
+        if (frac <= 0.02f) return 0
+        val spot = frac * text.pageHeight
+        val idx = text.replicas.indexOfFirst { it.box.centerY >= spot }
+        return if (idx < 0) 0 else idx
     }
 
     private suspend fun runFrom(startIndex: Int) {
