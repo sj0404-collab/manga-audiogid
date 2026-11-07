@@ -81,6 +81,22 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("show_frames", true)
         set(v) { prefs.edit().putBoolean("show_frames", v).apply(); touchBook() }
 
+    /**
+     * Насколько плотно видны рамки распознанного текста: 0.15 — едва заметно, 1.0 — плотно.
+     * Раньше была только «вкл/выкл», и рамки либо мешали читать рисунок, либо исчезали.
+     */
+    var frameOpacity: Float
+        get() = prefs.getFloat("frame_opacity", 0.65f)
+        set(v) { prefs.edit().putFloat("frame_opacity", v).apply(); touchBook() }
+
+    /**
+     * Форма рамок: `rounded` (скруглённый прямоугольник), `ellipse`, `circle`,
+     * `lines` (только по строкам, без общей рамки).
+     */
+    var frameShape: String
+        get() = prefs.getString("frame_shape", "rounded") ?: "rounded"
+        set(v) { prefs.edit().putString("frame_shape", v).apply(); touchBook() }
+
     /** Скрывать меню/плеер, пока идёт озвучка (по тапу возвращаются на 3 секунды). */
     var hideUiWhileReading: Boolean
         get() = prefs.getBoolean("hide_ui_reading", true)
@@ -126,6 +142,8 @@ class Settings(context: Context) {
             .putFloat("${k}speed", ttsSpeed)
             .putBoolean("${k}autoturn", ttsAutoPageTurn)
             .putBoolean("${k}frames", showTextFrames)
+            .putFloat("${k}frameop", frameOpacity)
+            .putString("${k}frameshape", frameShape)
             .putBoolean("${k}continuous", continuousScroll)
             .putFloat("${k}dwell", emptyPageDwellSec)
             .apply()
@@ -141,6 +159,8 @@ class Settings(context: Context) {
             ttsSpeed = prefs.getFloat("${k}speed", ttsSpeed)
             ttsAutoPageTurn = prefs.getBoolean("${k}autoturn", ttsAutoPageTurn)
             showTextFrames = prefs.getBoolean("${k}frames", showTextFrames)
+            frameOpacity = prefs.getFloat("${k}frameop", frameOpacity)
+            frameShape = prefs.getString("${k}frameshape", frameShape) ?: frameShape
             continuousScroll = prefs.getBoolean("${k}continuous", continuousScroll)
             emptyPageDwellSec = prefs.getFloat("${k}dwell", emptyPageDwellSec)
         } finally {

@@ -127,7 +127,9 @@ class PageTextBuilder(
         // 1.5) регион, в который слиплись ДВА облачка («СТОП, ВСЁ…» + «ЭТО НЕ ЛЮБОВНЫЕ
         // ОТНОШЕНИЯ!» на стр.20), режем по разрыву между строками — иначе чужие фразы
         // звучат одной репликой и последние строки первой теряются.
-        val pieces = blocks.flatMap { RegionSplitter.split(it) }
+        val pieces = blocks
+            .flatMap { RegionSplitter.split(it) }
+            .map { RegionSplitter.trim(it) }
         // 2) порядок чтения
         val ordered = ReadingOrder.order(pieces, mode)
         val replicas = ArrayList<Replica>(ordered.size)
@@ -179,7 +181,8 @@ class PageTextBuilder(
                 // «ванна» на рисунке, а не реплика. В журнале 1.6.16 такая область дала
                 // рамку на 38 % высоты страницы и «съела» соседние облачка.
                 val pageArea = pageWidth.toFloat() * pageHeight.toFloat()
-                val hugeEmpty = !fallback.any { it.isLetter() } && pageArea > 0f &&
+                // «букв почти нет» (одна-две буквы — след корейского SFX или мусор), а не «ни одной»
+                val hugeEmpty = fallback.count { it.isLetter() } < 3 && pageArea > 0f &&
                     region.box.area > pageArea * 0.03f
                 if (hugeEmpty) {
                     decorative++

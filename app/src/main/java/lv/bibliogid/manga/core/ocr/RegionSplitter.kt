@@ -18,6 +18,32 @@ object RegionSplitter {
     /** Зазор между строками, после которого это точно другое облачко. */
     private const val SPLIT_GAP = 1.6f
 
+    /**
+     * Обрезает рамку региона до РАМОК СТРОК, если она раздулась в пустоту.
+     *
+     * Журнал 1.6.17, стр.20: у облачка «СТОП, ВСЁ НЕ ДОЛЖНО БЫТЬ ТАК ПРОСТО!» рамка
+     * выросла на 26 % высоты страницы — детектор отдал бокс вместе с пустым облачком-«ванной»,
+     * и текст оказался в крошечном углу огромной рамки. Площадь рамки больше площади строк
+     * в 2,5 раза — значит она захватила пустоту, подрезаем.
+     */
+    fun trim(region: TextRegion): TextRegion {
+        val boxes = region.lineBoxes
+        if (boxes.isEmpty()) return region
+        val linesBox = boxes.drop(1).fold(boxes.first()) { acc, b -> acc.union(b) }
+        if (linesBox.width <= 1f || linesBox.height <= 1f) return region
+        val ratio = region.box.area / linesBox.area
+        val tooTall = region.box.height > linesBox.height * 2.5f
+        if (ratio <= 2.5f && !tooTall) return region
+        val padX = (linesBox.width * 0.08f).coerceAtLeast(2f)
+        val padY = (linesBox.height * 0.12f).coerceAtLeast(2f)
+        return region.copy(
+            box = Box(
+                linesBox.left - padX, linesBox.top - padY,
+                linesBox.right + padX, linesBox.bottom + padY
+            )
+        )
+    }
+
     fun split(region: TextRegion): List<TextRegion> {
         val lines = region.rawLines
         val boxes = region.lineBoxes

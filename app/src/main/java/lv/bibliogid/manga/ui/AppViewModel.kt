@@ -186,6 +186,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var continuousMode by mutableStateOf(false)
         private set
 
+    /** Прозрачность рамок (0.15…1.0) и их форма — Compose должен их видеть. */
+    var frameOpacity by mutableStateOf(0.65f)
+        private set
+    var frameShape by mutableStateOf("rounded")
+        private set
+
+    /** Панель «Рамки»: прозрачность, форма, вкл/выкл. */
+    var showFramesPanel by mutableStateOf(false)
+
+    fun setFrameOpacity(v: Float) {
+        frameOpacity = v.coerceIn(0.15f, 1f)
+        settings.frameOpacity = frameOpacity
+    }
+
+    fun setFrameShape(shape: String) {
+        frameShape = shape
+        settings.frameShape = shape
+        statusMessage = "Рамки: " + when (shape) {
+            "ellipse" -> "эллипс"
+            "circle" -> "круг"
+            "lines" -> "по строкам"
+            else -> "скруглённые"
+        }
+    }
+
     fun setFrames(on: Boolean) {
         framesEnabled = on
         settings.showTextFrames = on
@@ -249,6 +274,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // автоматически (Settings.touchBook) — кнопка «Запомнить настройки книги» не нужна.
         settings.bindBook(title)
         framesEnabled = settings.showTextFrames
+        frameOpacity = settings.frameOpacity
+        frameShape = settings.frameShape
         continuousMode = settings.continuousScroll
         if (!applied && settings.perBookSettings) {
             // книга открыта впервые — запоминаем текущие настройки как её профиль
@@ -271,6 +298,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         settings.migrateFramesOnce()
         settings.migrateEmptyDwellOnce()
         framesEnabled = settings.showTextFrames
+        frameOpacity = settings.frameOpacity
+        frameShape = settings.frameShape
         continuousMode = settings.continuousScroll
     }
 
@@ -437,7 +466,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * распознанный текст подхватываться не должен — он собран прежним движком.
      */
     private fun cacheKey(manga: MangaItem, chapter: ChapterEntry, page: Int): String =
-        "${manga.entry.title}/${chapter.name}/$page/${settings.localEngine}-ocr27"
+        "${manga.entry.title}/${chapter.name}/$page/${settings.localEngine}-ocr28"
 
     private fun closeSource() {
         stopReading()

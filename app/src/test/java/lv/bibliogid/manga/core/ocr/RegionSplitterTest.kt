@@ -48,4 +48,39 @@ class RegionSplitterTest {
         )
         assertEquals(1, RegionSplitter.split(r).size)
     }
+
+    @Test
+    fun `рамка, раздутая в пустоту, подрезается по строкам`() {
+        // 1.6.17, стр.20: бокс на 26 % высоты страницы, а текст — в его верхнем углу
+        val r = TextRegion(
+            box = Box(0f, 350f, 720f, 1150f),
+            type = RegionType.BUBBLE,
+            rawLines = listOf("СТОП, ВСЁ", "НЕ ДОЛЖНО БЫТЬ", "ТАК ПРОСТО!"),
+            lineBoxes = listOf(
+                Box(150f, 740f, 600f, 780f),
+                Box(140f, 786f, 610f, 826f),
+                Box(160f, 832f, 600f, 872f)
+            )
+        )
+        val trimmed = RegionSplitter.trim(r)
+        assertTrue("рамка не подрезана: ${trimmed.box}", trimmed.box.height < 300f)
+        assertTrue(trimmed.box.top in 720f..740f)
+        // строки и текст не тронуты
+        assertEquals(3, trimmed.rawLines.size)
+        assertEquals(3, trimmed.lineBoxes.size)
+    }
+
+    @Test
+    fun `нормальная рамка не подрезается`() {
+        val r = TextRegion(
+            box = Box(140f, 730f, 620f, 890f),
+            type = RegionType.BUBBLE,
+            rawLines = listOf("СТОП, ВСЁ", "НЕ ДОЛЖНО БЫТЬ"),
+            lineBoxes = listOf(
+                Box(150f, 740f, 600f, 780f),
+                Box(140f, 786f, 610f, 826f)
+            )
+        )
+        assertEquals(r.box, RegionSplitter.trim(r).box)
+    }
 }

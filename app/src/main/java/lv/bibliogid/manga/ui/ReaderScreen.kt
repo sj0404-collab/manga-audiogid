@@ -183,6 +183,9 @@ fun ReaderScreen(vm: AppViewModel) {
             )
         }
 
+        if (vm.showFramesPanel) {
+            FramesSheet(vm)
+        }
         if (vm.showTextPanel) {
             PageTextSheet(vm)
         }
@@ -201,10 +204,8 @@ private fun FrameToggle(vm: AppViewModel) {
     Surface(
         color = if (on) Color(0xFF0E7490) else Color(0x33FFFFFF),
         shape = RoundedCornerShape(8.dp),
-        onClick = {
-            vm.setFrames(!on)
-            vm.statusMessage = if (!on) "Рамки включены: $count шт." else "Рамки выключены"
-        }
+        // тап открывает панель «Рамки»: видимость, прозрачность, форма
+        onClick = { vm.showFramesPanel = true }
     ) {
         Text(
             text = if (on) "рамки $count" else "рамки выкл",
@@ -441,6 +442,11 @@ private fun PageContent(
                     typeface = android.graphics.Typeface.DEFAULT_BOLD
                     setShadowLayer(3f, 0f, 0f, android.graphics.Color.BLACK)
                 }
+                // Прозрачность и форма рамок — настройки пользователя (панель «Рамки»)
+                val shape = vm.frameShape
+                val fade = vm.frameOpacity.coerceIn(0.15f, 1f)
+                fun tint(c: Color): Color = c.copy(alpha = c.alpha * fade)
+
                 frames.forEach { r ->
                     // Рамка = регион, доращенный до контура облачка в OcrPipeline.
                     // Раньше здесь брался union строк OCR — и рамка обрезала облачко
@@ -463,50 +469,39 @@ private fun PageContent(
                     val spoken = vm.isSpoken(index, r)
                     val isActive = livePage && r.index == active
                     when {
-                        isActive -> {
-                            drawRoundRect(Color(0x5A67E8F9), tl, sz, corner)
-                            drawRoundRect(
-                                Color(0x99000000), tl, sz, corner,
-                                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 4.dp.toPx())
-                            )
-                            drawRoundRect(
-                                Color(0xFF22D3EE), tl, sz, corner,
-                                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.5.dp.toPx())
-                            )
-                        }
+                        isActive -> drawFrameShape(
+                            shape, tl, sz, corner,
+                            tint(Color(0x5A67E8F9)), tint(Color(0x22D3EE)),
+                            tint(Color(0x99000000)), 2.5.dp.toPx()
+                        )
                         // «молчание» (многоточие): облачко найдено, но читать нечего
-                        r.silence -> {
-                            drawRoundRect(Color(0x1F9CA3AF), tl, sz, corner)
-                            drawRoundRect(
-                                Color(0xFF9CA3AF), tl, sz, corner,
-                                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.2.dp.toPx())
-                            )
-                        }
+                        r.silence -> drawFrameShape(
+                            shape, tl, sz, corner,
+                            tint(Color(0x1F9CA3AF)), tint(Color(0x9CA3AF)),
+                            null, 1.2.dp.toPx()
+                        )
                         // уже прозвучало — приглушённая зелёная рамка
-                        spoken -> {
-                            drawRoundRect(Color(0x1A34D399), tl, sz, corner)
-                            drawRoundRect(
-                                Color(0xFF34D399), tl, sz, corner,
-                                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.2.dp.toPx())
-                            )
-                        }
-                        else -> {
-                            drawRoundRect(Color(0x3322D3EE), tl, sz, corner)
-                            drawRoundRect(
-                                Color(0xFF0284C7), tl, sz, corner,
-                                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.4.dp.toPx())
-                            )
-                        }
+                        spoken -> drawFrameShape(
+                            shape, tl, sz, corner,
+                            tint(Color(0x1A34D399)), tint(Color(0x34D399)),
+                            null, 1.2.dp.toPx()
+                        )
+                        else -> drawFrameShape(
+                            shape, tl, sz, corner,
+                            tint(Color(0x3322D3EE)), tint(Color(0x0284C7)),
+                            null, 1.4.dp.toPx()
+                        )
                     }
                     // тонкие рамки ровно по строкам текста: видно, что рамка облачка
-                    // захватила пустоту, а строки — вот они
+                    // захватила пустоту, а строки — вот они.
+                    // В режиме «по строкам» они и есть рамка — поэтому рисуем ярче.
                     r.lines.forEach { ln ->
                         val ll = size.width * (ln.left / refW)
                         val lt = size.height * (ln.top / refH)
                         val lw = size.width * (ln.width / refW)
                         val lh = size.height * (ln.height / refH)
                         drawRect(
-                            Color(0x55FFFFFF),
+                            if (shape == "lines") tint(Color(0xFF34D399)) else tint(Color(0x55FFFFFF)),
                             androidx.compose.ui.geometry.Offset(ll, lt),
                             androidx.compose.ui.geometry.Size(lw, lh),
                             style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
@@ -521,6 +516,49 @@ private fun PageContent(
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * Рамка одной реплики выбранной формы.
+ *
+ * Пользователь просил выбирать вид рамки: облачко бывает круглым, вытянутым или
+ * прямоугольным, и одна форма на всё «режет глаз». Варианты:
+ *  - `rounded` — скруглённый прямоугольник (по умолчанию);
+ *  - `ellipse` — эллипс по рамке реплики;
+ *  - `circle` — круг по меньшей стороне;
+ *  - `lines` — общей рамки нет, только подсветка строк текста.
+ */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawFrameShape(
+    shape: String,
+    tl: androidx.compose.ui.geometry.Offset,
+    sz: androidx.compose.ui.geometry.Size,
+    corner: androidx.compose.ui.geometry.CornerRadius,
+    fill: Color,
+    stroke: Color,
+    shadow: Color?,
+    strokeWidth: Float
+) {
+    val style = androidx.compose.ui.graphics.drawscope.Stroke(width = strokeWidth)
+    when (shape) {
+        "ellipse" -> {
+            drawOval(fill, tl, sz)
+            drawOval(stroke, tl, sz, style = style)
+        }
+        "circle" -> {
+            val r = minOf(sz.width, sz.height) / 2f
+            val c = androidx.compose.ui.geometry.Offset(tl.x + sz.width / 2f, tl.y + sz.height / 2f)
+            drawCircle(fill, r, c)
+            drawCircle(stroke, r, c, style = style)
+        }
+        "lines" -> Unit                       // общую рамку не рисуем
+        else -> {
+            if (shadow != null) {
+                drawRoundRect(shadow, tl, sz, corner, style = androidx.compose.ui.graphics.drawscope.Stroke(width = strokeWidth * 1.6f))
+            }
+            drawRoundRect(fill, tl, sz, corner)
+            drawRoundRect(stroke, tl, sz, corner, style = style)
         }
     }
 }
@@ -554,6 +592,86 @@ private fun ContinuousReader(vm: AppViewModel) {
     LazyColumn(Modifier.fillMaxSize(), state = state) {
         items(vm.pageCount) { index ->
             PageView(vm, index, fillWidth = true)
+        }
+    }
+}
+
+/**
+ * Панель «Рамки»: показать/скрыть, прозрачность, форма.
+ *
+ * Раньше была одна кнопка «рамки N», которая просто включала и выключала рамки:
+ * либо они мешали смотреть рисунок, либо исчезали совсем. Теперь видимость
+ * регулируется ползунком (15…100 %), а форма выбирается под страницу:
+ * скруглённая, эллипс, круг или только по строкам текста.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FramesSheet(vm: AppViewModel) {
+    ModalBottomSheet(
+        onDismissRequest = { vm.showFramesPanel = false },
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+            Text("Рамки распознанного текста", style = MaterialTheme.typography.titleLarge)
+            Spacer(Modifier.height(2.dp))
+            Text(
+                if (vm.framesEnabled) "сейчас включены · ${vm.frameCount} шт." else "сейчас выключены",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Показывать рамки")
+                    Text(
+                        "выключить, чтобы рисунок был чистым",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(checked = vm.framesEnabled, onCheckedChange = { vm.setFrames(it) })
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "Видимость: ${(vm.frameOpacity * 100).toInt()} %",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Slider(
+                value = vm.frameOpacity,
+                onValueChange = { vm.setFrameOpacity(it) },
+                valueRange = 0.15f..1f,
+                enabled = vm.framesEnabled
+            )
+            Text(
+                "15 % — рамка едва заметна и не мешает читать рисунок, 100 % — плотная",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(14.dp))
+            Text("Форма рамки", style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(6.dp))
+            val options = listOf(
+                "rounded" to "Скруглённая",
+                "ellipse" to "Эллипс",
+                "circle" to "Круг",
+                "lines" to "По строкам"
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                options.forEach { (key, label) ->
+                    FilterChip(
+                        selected = vm.frameShape == key,
+                        onClick = { vm.setFrameShape(key) },
+                        label = { Text(label, style = MaterialTheme.typography.labelSmall) }
+                    )
+                }
+            }
+            Text(
+                "«По строкам» — общей рамки нет, подсвечиваются только сами строки текста: " +
+                    "видно, где распознавание захватило лишнее место.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(18.dp))
         }
     }
 }
