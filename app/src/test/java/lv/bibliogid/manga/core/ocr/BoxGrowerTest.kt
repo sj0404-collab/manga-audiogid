@@ -75,8 +75,6 @@ class BoxGrowerTest {
         assertTrue("рост по X ограничен: $grown", grown.width <= text.width * 2.6f)
         assertTrue("рост по Y ограничен", grown.height <= text.height * 3.6f)
     }
-}
-
 
     /**
      * Журнал 1.6.9, стр.16: рамка выросла до [0,1321,719,2875] — полстраницы.
@@ -93,6 +91,9 @@ class BoxGrowerTest {
         assertTrue("рост по Y ограничен: $grown", grown.height <= text.height * 3.6f + 9f)
         assertTrue("рамка не выше страницы", grown.top >= 0f && grown.bottom <= h.toFloat())
     }
+}
+
+
 
 /** Отсев декоративных заголовков и номеров глав («Жак прожить жизнь…», «48», «T4d»). */
 class DecorativeFilterTest {
