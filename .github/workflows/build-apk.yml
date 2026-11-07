@@ -36,13 +36,13 @@ jobs:
         if: ${{ secrets.KEYSTORE_B64 != '' }}
         run: |
           mkdir -p keystore
-          echo "${{ secrets.KEYSTORE_B64 }}" | base64 -d > keystore/release.jks
-          cat > keystore.properties <<EOF
-          storeFile=../keystore/release.jks
-          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
-          keyAlias=${{ secrets.KEY_ALIAS }}
-          keyPassword=${{ secrets.KEY_PASSWORD }}
-          EOF
+          echo "${{ secrets.KEYSTORE_B64 }}" | base64 -d > keystore/bibliogid-release.jks
+          {
+            echo "storeFile=keystore/bibliogid-release.jks"
+            echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}"
+            echo "keyAlias=${{ secrets.KEY_ALIAS }}"
+            echo "keyPassword=${{ secrets.KEY_PASSWORD }}"
+          } > keystore.properties
 
       - name: Сборка релизных APK
         run: >
