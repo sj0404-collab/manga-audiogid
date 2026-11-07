@@ -58,7 +58,12 @@ object RegionGrouper {
         var cur: MutableList<OcrLine>? = null
         var bottom = 0f
         for (line in sorted) {
-            if (cur != null && line.box.top - bottom > maxGap) cur = null
+            // только после законченной фразы: иначе разрез проходит внутри облачка
+            val prev = cur?.lastOrNull()
+            val prevEnds = prev != null && prev.text.trimEnd().let {
+                it.isNotEmpty() && it.last() in ".!?…»\""
+            }
+            if (cur != null && prevEnds && line.box.top - bottom > maxGap) cur = null
             if (cur == null) {
                 cur = mutableListOf()
                 parts.add(cur)

@@ -466,7 +466,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * распознанный текст подхватываться не должен — он собран прежним движком.
      */
     private fun cacheKey(manga: MangaItem, chapter: ChapterEntry, page: Int): String =
-        "${manga.entry.title}/${chapter.name}/$page/${settings.localEngine}-ocr29"
+        "${manga.entry.title}/${chapter.name}/$page/${settings.localEngine}-ocr30"
 
     private fun closeSource() {
         stopReading()

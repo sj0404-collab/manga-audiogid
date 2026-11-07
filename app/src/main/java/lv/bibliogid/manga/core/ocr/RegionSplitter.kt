@@ -16,7 +16,20 @@ package lv.bibliogid.manga.core.ocr
 object RegionSplitter {
 
     /** Зазор между строками, после которого это точно другое облачко. */
-    private const val SPLIT_GAP = 1.6f
+    private const val SPLIT_GAP = 2.0f
+
+    /**
+     * Признак конца фразы. Режем только после него: журнал 1.6.19, стр.2 — облачко
+     * «НО РАЗВЕ / НАШ ЛИДЕР УЖЕ / НЕДОСТАТОЧНО / ПЛОХ?» разрезалось на «Но разве.»
+     * и остальное, и голос читал обрывок. У настоящего конца первой фразы знак есть
+     * («СТОП, ВСЁ НЕ ДОЛЖНО БЫТЬ ТАК ПРОСТО!» + «ЭТО НЕ ЛЮБОВНЫЕ ОТНОШЕНИЯ!»), а у
+     * оборванной строки его нет.
+     */
+    private fun endsSentence(text: String): Boolean {
+        val t = text.trimEnd()
+        if (t.isEmpty()) return false
+        return t.last() in ".!?…»\""
+    }
 
     /**
      * Обрезает рамку региона до РАМОК СТРОК, если она раздулась в пустоту.
@@ -59,7 +72,10 @@ object RegionSplitter {
         var cur: MutableList<Pair<String, Box>>? = null
         var bottom = 0f
         for (p in pairs) {
-            if (cur != null && p.second.top - bottom > maxGap) cur = null
+            // Режем только после законченной фразы — иначе получаются обрывки «Но разве.»
+            val prev = cur?.lastOrNull()
+            val prevEnds = prev != null && endsSentence(prev.first)
+            if (cur != null && prevEnds && p.second.top - bottom > maxGap) cur = null
             if (cur == null) {
                 cur = mutableListOf()
                 parts.add(cur)

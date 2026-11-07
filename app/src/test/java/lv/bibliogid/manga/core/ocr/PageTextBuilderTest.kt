@@ -198,4 +198,41 @@ class PageTextBuilderTest {
         // и рамки больше не на полстраницы
         assertTrue(page.replicas.all { it.box.height < 400f })
     }
+
+    @Test
+    fun `облачко с крупным межстрочным интервалом читается целиком`() {
+        val r = TextRegion(
+            box = Box(140f, 100f, 610f, 392f),
+            type = RegionType.BUBBLE,
+            rawLines = listOf("НО РАЗВЕ", "НАШ ЛИДЕР УЖЕ", "НЕДОСТАТОЧНО", "ПЛОХ?"),
+            lineBoxes = listOf(
+                Box(150f, 100f, 600f, 140f),
+                Box(140f, 260f, 610f, 300f),
+                Box(160f, 306f, 600f, 346f),
+                Box(200f, 352f, 560f, 392f)
+            )
+        )
+        val page = builder.build(listOf(r), ReadingMode.WEBTOON_VERTICAL, "test", 1)
+        assertEquals(1, page.replicas.size)
+        assertTrue(page.replicas[0].text.contains("разве", ignoreCase = true))
+        assertTrue(page.replicas[0].text.contains("плох", ignoreCase = true))
+    }
+
+    @Test
+    fun `разрезанная фраза склеивается обратно`() {
+        // два региона одного облачка: верхний без точки на конце
+        val top = TextRegion(
+            Box(150f, 100f, 600f, 140f), RegionType.BUBBLE,
+            listOf("НО РАЗВЕ"), lineBoxes = listOf(Box(150f, 100f, 600f, 140f))
+        )
+        val bottom = TextRegion(
+            Box(150f, 146f, 600f, 232f), RegionType.BUBBLE,
+            listOf("НАШ ЛИДЕР УЖЕ", "НЕДОСТАТОЧНО ПЛОХ?"),
+            lineBoxes = listOf(Box(150f, 146f, 600f, 186f), Box(150f, 192f, 600f, 232f))
+        )
+        val page = builder.build(listOf(top, bottom), ReadingMode.WEBTOON_VERTICAL, "test", 1)
+        assertEquals(1, page.replicas.size)
+        assertTrue(page.replicas[0].text.contains("разве", ignoreCase = true))
+        assertTrue(page.replicas[0].text.contains("плох", ignoreCase = true))
+    }
 }

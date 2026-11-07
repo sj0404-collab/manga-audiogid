@@ -111,6 +111,43 @@ class PageTextBuilder(
     private val normalizer: TextNormalizer = TextNormalizer(joinMode = JoinMode.REGION)
 ) {
 
+    /**
+     * Склеивает соседние реплики, если предыдущая «не закончена» (в конце строки не было
+     * точки/!/?) и вторая стоит вплотную под ней в той же колонке. Это лечит разрез
+     * внутри одного облачка: «Но разве.» + «Наш лидер уже недостаточно плох?».
+     */
+    private fun mergeOpenEnded(list: List<Replica>): List<Replica> {
+        if (list.size < 2) return list
+        val out = ArrayList<Replica>(list.size)
+        for (r in list) {
+            val prev = out.lastOrNull()
+            if (prev != null && prev.openEnded && !prev.silence && !r.silence && stacked(prev, r)) {
+                out[out.size - 1] = prev.copy(
+                    text = BubbleJoiner.join(listOf(prev.text, r.text)),
+                    box = prev.box.union(r.box),
+                    lines = prev.lines + r.lines,
+                    openEnded = r.openEnded
+                )
+                lv.bibliogid.manga.core.util.AppLog.d(
+                    "ocr",
+                    "склеены части одной реплики: «${prev.text}» + «${r.text}»"
+                )
+                continue
+            }
+            out.add(r)
+        }
+        return out
+    }
+
+    /** Вторая реплика стоит прямо под первой (или на ней) в той же колонке. */
+    private fun stacked(a: Replica, b: Replica): Boolean {
+        val overlapX = minOf(a.box.right, b.box.right) - maxOf(a.box.left, b.box.left)
+        val minW = minOf(a.box.width, b.box.width).coerceAtLeast(1f)
+        if (overlapX <= 0f || overlapX / minW < 0.4f) return false
+        val gap = b.box.top - a.box.bottom
+        return gap <= a.box.height
+    }
+
     fun build(
         regions: List<TextRegion>,
         mode: ReadingMode,
@@ -279,6 +316,9 @@ class PageTextBuilder(
                 )
             }
         }
+        // Обратная страховка: если фраза всё-таки разрезалась (в конце строки не было
+        // знака), склеиваем части обратно — иначе голос читает обрывок «Но разве.»
+        val glued = mergeOpenEnded(replicas)
         if (decorative > 0) warnings += "пропущено нетекстовых строк: $decorative"
         // Диагностика: рамка на треть страницы почти всегда значит «слиплись облачка».
         // Без этой строки в журнале причину «огромной рамки» не видно (1.6.18).
@@ -289,7 +329,9 @@ class PageTextBuilder(
                 warnings += "рамка реплики ${big.index + 1} занимает $pct% страницы"
             }
         }
-        val finalReplicas = replicas.filter { it.text.isNotBlank() || it.needsReview }
+        val finalReplicas = glued
+            .filter { it.text.isNotBlank() || it.needsReview }
+            .mapIndexed { i, r -> r.copy(index = i) }
         val bandIndexes = Bands.assign(finalReplicas.map { it.box })
         val bandCount = Bands.count(bandIndexes).coerceAtLeast(if (finalReplicas.isEmpty()) 0 else 1)
         val withBands = finalReplicas.mapIndexed { i, r -> r.copy(bandIndex = bandIndexes.getOrElse(i) { 0 }) }

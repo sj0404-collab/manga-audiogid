@@ -83,4 +83,19 @@ class RegionSplitterTest {
         )
         assertEquals(r.box, RegionSplitter.trim(r).box)
     }
+
+    @Test
+    fun `оборванная строка не отрезается в отдельную реплику`() {
+        // 1.6.19, стр.2: «НО РАЗВЕ / НАШ ЛИДЕР УЖЕ / НЕДОСТАТОЧНО / ПЛОХ?» разрезалось
+        // на «Но разве.» и остальное — голос читал обрывок
+        val r = region(
+            listOf(
+                "НО РАЗВЕ" to Box(150f, 100f, 600f, 140f),
+                "НАШ ЛИДЕР УЖЕ" to Box(140f, 260f, 610f, 300f),
+                "НЕДОСТАТОЧНО" to Box(160f, 306f, 600f, 346f),
+                "ПЛОХ?" to Box(200f, 352f, 560f, 392f)
+            )
+        )
+        assertEquals(1, RegionSplitter.split(r).size)
+    }
 }
