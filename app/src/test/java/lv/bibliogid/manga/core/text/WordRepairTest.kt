@@ -44,6 +44,8 @@ class WordRepairTest {
 
     @Test
     fun `пунктуация сохраняется на месте`() {
-        assertEquals("дело,", WordRepair.repairToken("АЕЛО,"))
+        // с 1.6.15 заглавная буква исходника не теряется («АЕЛО» -> «Дело», а не «дело»)
+        assertEquals("Дело,", WordRepair.repairToken("АЕЛО,"))
+        assertEquals("дело,", WordRepair.repairToken("аело,"))
     }
 }

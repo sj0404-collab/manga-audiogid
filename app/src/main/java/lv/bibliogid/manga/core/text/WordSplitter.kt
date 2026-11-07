@@ -71,12 +71,23 @@ object WordSplitter {
 
     fun isPunct(c: Char): Boolean = PUNCT.indexOf(c) >= 0
 
-    /** Кириллизация латиницы/цифр — без обращения к словарю. */
+    /**
+     * Кириллизация латиницы/цифр — без обращения к словарю.
+     *
+     * ВАЖНО: цифру превращаем в букву ТОЛЬКО внутри слова («П2ЖАЛИСТА» -> «пожалуйста»).
+     * Иначе «2-3 раза» становилось «з-з раза», и голос читал «з-з раза» вместо «два-три раза»
+     * (жалоба по журналу 1.6.14).
+     */
     fun toCyrillic(raw: String): String {
         val sb = StringBuilder(raw.length)
-        for (ch in raw) {
+        for ((i, ch) in raw.withIndex()) {
             val lower = ch.lowercaseChar()
-            val mapped = LAT[lower] ?: DIGIT[ch]
+            val prevIsLetter = i > 0 && raw[i - 1].isLetter()
+            val nextIsLetter = i + 1 < raw.length && raw[i + 1].isLetter()
+            val mapped = when {
+                ch.isDigit() -> if (prevIsLetter || nextIsLetter) DIGIT[ch] else null
+                else -> LAT[lower]
+            }
             when {
                 mapped != null -> sb.append(mapped)
                 ch.isLetterOrDigit() || isPunct(ch) || ch == ' ' -> sb.append(lower)

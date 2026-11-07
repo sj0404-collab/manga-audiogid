@@ -79,4 +79,39 @@ class SpeechPolishTest {
         assertTrue(r.fixes.isNotEmpty())
         assertTrue(r.fixes.any { it.from.contains("сераце") && it.to.contains("сердце") })
     }
+
+    // ------------------------------------- 1.6.15: пропущенная буква и цифры
+
+    @Test
+    fun `слово с пропущенной буквой восстанавливается`() {
+        // журнал 1.6.14: «Вы должны быть равноушны» (буква «д» потеряна)
+        assertTrue(polish("Вы должны быть равноушны.").contains("равнодушны"))
+        assertTrue(polish("Вы должны быть равноаушны.").contains("равнодушны"))
+    }
+
+    @Test
+    fun `цифры через дефис не превращаются в буквы`() {
+        // «2-3 раза» читалось как «2-з раза»
+        assertEquals("2-3 раза", WordSplitter.split("2-3 раза"))
+        assertTrue(polish("она говорит 2-3 раза.").contains("2-3"))
+        // текст, уже испорченный прошлой версией (или самим OCR): «2-з» -> «2-3»
+        assertTrue(polish("она говорит 2-з раза.").contains("2-3"))
+        val norm = TextNormalizer(joinMode = JoinMode.REGION)
+            .normalize(listOf("При творите сь, что обаумываете что она говорит 2-3 раза."))
+            .replicas.joinToString(" ")
+        assertTrue("цифры испорчены: $norm", norm.contains("2-3") && !norm.contains("з-з"))
+    }
+
+    @Test
+    fun `заглавная буква не теряется при починке`() {
+        assertEquals("Сердце дракона", WordRepair.repairLine("Серце дракона"))
+        assertEquals("Равнодушны ли они?", WordRepair.repairLine("Равноаушны ли они?"))
+    }
+
+    @Test
+    fun `имена не переделываются в слова`() {
+        for (n in listOf("Карсель", "Мувон", "Алисия", "Серин", "Риэль")) {
+            assertEquals(n, WordRepair.repairLine(n))
+        }
+    }
 }

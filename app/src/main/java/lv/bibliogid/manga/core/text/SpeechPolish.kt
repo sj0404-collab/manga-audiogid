@@ -23,8 +23,13 @@ object SpeechPolish {
         if (text.isBlank() || !WordFrequencies.isLoaded) return Result(text, emptyList())
         val fixes = ArrayList<Fix>(2)
 
+        // 0) «2-з раза» -> «2-3 раза»: OCR путает цифру 3 с буквой «з» после дефиса
+        val digits = fixDigitDash(text)
+        if (digits != text) fixes.add(Fix(text, digits))
+        var s = digits
+
         // 1) «При творите сь» -> «Притворитесь», «Ха-» «ха.» -> «Ха-ха.» (склейка + регистр)
-        var s = WordMender.mend(text)
+        s = WordMender.mend(s)
         if (s != text) fixes.add(Fix(text, s))
 
         // 2) двойники шрифта: «сераце» -> «сердце», «поаумала» -> «подумала»
@@ -41,6 +46,14 @@ object SpeechPolish {
             s = split
         }
         return Result(s, fixes)
+    }
+
+    /** Буквы, которые OCR ставит вместо цифры после дефиса: «2-з» вместо «2-3». */
+    private val DIGIT_HOMOGLYPH = mapOf('з' to '3', 'б' to '6', 'ч' to '4')
+
+    private fun fixDigitDash(text: String): String {
+        val re = Regex("(\\d)\\s*[-–—]\\s*([збч])")
+        return re.replace(text) { m -> m.groupValues[1] + "-" + DIGIT_HOMOGLYPH.getValue(m.groupValues[2][0]) }
     }
 
     /** Разбивает слипшиеся токены, сохраняя пунктуацию и заглавную букву. */
