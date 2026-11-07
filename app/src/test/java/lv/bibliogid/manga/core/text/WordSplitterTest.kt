@@ -74,4 +74,40 @@ class WordSplitterTest {
         assertEquals("привет как дела", WordSplitter.split("привет как дела"))
         assertEquals("ха-ха-ха", WordSplitter.split("ха-ха-ха"))
     }
+
+    // ---------------------------------------------- короткие склейки (1.6.12)
+
+    @Test
+    fun `Ноя беспокоюсь читается как но я беспокоюсь`() {
+        // реальная строка из журнала 1.6.11: «Ноя беспокоюсь»
+        assertEquals("но я беспокоюсь", WordSplitter.split("Ноя беспокоюсь"))
+    }
+
+    @Test
+    fun `приклеенная частица ли отделяется от имени`() {
+        // «Может лианна.» -> «Может ли Анна.»
+        assertEquals("может ли анна.", WordSplitter.split("Может лианна."))
+    }
+
+    @Test
+    fun `короткая склейка видна в needsSplit`() {
+        assertTrue(WordSplitter.needsSplit("Ноя беспокоюсь"))
+        assertTrue(WordSplitter.needsSplit("Может лианна."))
+        assertFalse(WordSplitter.needsSplit("Ты должна была сказать привет"))
+    }
+
+    @Test
+    fun `настоящие редкие слова не разрезаются`() {
+        // аудит словаря: эти слова делить нельзя, они защищены списком KEEP_AS_IS
+        for (w in listOf("нечто", "некогда", "негде", "некто", "ноты", "тонет", "немой", "тона", "лия")) {
+            assertEquals("порезали «$w»", null, WordSplitter.splitShort(w, atLineStart = true))
+        }
+    }
+
+    @Test
+    fun `имя в середине строки не разрезается`() {
+        // однобуквенный хвост делим только в начале строки, иначе «Лия» -> «ли я»
+        assertEquals(null, WordSplitter.splitShort("лия", atLineStart = false))
+        assertEquals(null, WordSplitter.splitShort("яна", atLineStart = true))
+    }
 }

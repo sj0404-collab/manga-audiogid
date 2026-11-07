@@ -19,8 +19,8 @@ android {
         applicationId = "lv.bibliogid.manga"
         minSdk = 24
         targetSdk = 34
-        versionCode = 27
-        versionName = "1.6.11"
+        versionCode = 28
+        versionName = "1.6.12"
         vectorDrawables { useSupportLibrary = true }
     }
 

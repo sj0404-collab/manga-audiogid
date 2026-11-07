@@ -27,6 +27,35 @@ object WordSplitter {
         '0' to 'о', '3' to 'з', '4' to 'ч', '6' to 'б', '8' to 'в', '9' to 'д', '2' to 'з', '5' to 'с'
     )
 
+    /**
+     * Служебные слова, которые OCR приклеивает к соседнему: «Ноя беспокоюсь» -> «Но я беспокоюсь»,
+     * «Может лианна.» -> «Может ли Анна.». Берём только двухбуквенные частицы: они не бывают
+     * началом имени, поэтому риск испортить имя минимален.
+     */
+    private val PARTICLES = setOf("но", "не", "же", "ли", "то")
+
+    /** Однобуквенные частицы для случаев вида «вомне» -> «в о мне» не нужны, но «иснова» — да. */
+    private val SHORT_PARTICLES = setOf('в', 'к', 'с', 'у', 'о', 'а', 'и', 'я')
+
+    /** Однобуквенные «хвосты», которые после частицы — почти всегда живая реплика. */
+    private val TAIL_SINGLES = setOf('я', 'и', 'а', 'о', 'у', 'ы', 'е')
+
+    /**
+     * Словарные слова, которые делить нельзя: это настоящие слова, просто редкие.
+     * Список составлен аудитом: прогон словаря через [splitShort] дал ровно эти слова
+     * («нечто», «некогда», «тонет»…), их и защищаем.
+     */
+    private val KEEP_AS_IS = setOf(
+        "нечто", "некогда", "негде", "некто", "ноты", "тонет", "немой", "тона", "нескоро",
+        "ноже", "женам", "нелюдей", "лион", "тоне", "тоу", "неа", "лия"
+    )
+
+    /** «Редкое» слово словаря: частота ниже — разрешаем делить, если разбиение выгоднее. */
+    private const val RARE_COUNT = 500.0
+
+    /** Минимальный выигрыш по log-вероятности, чтобы тронуть словарное слово. */
+    private const val MIN_GAIN = 4.0
+
     private const val UNKNOWN_CHAR_COST = -13.8   // ln(1e-6) за символ неизвестного слова
     private const val MAX_WORD = 20
     private const val PUNCT = ".,!?…:;—–-'()«»\"„“”"
@@ -56,10 +85,12 @@ object WordSplitter {
         if (!WordFrequencies.isLoaded) return false
         val tokens = line.split(' ').filter { it.isNotBlank() }
         if (tokens.isEmpty()) return false
-        return tokens.any { t ->
+        return tokens.withIndex().any { (i, t) ->
             val core = cleanToken(t)
             if (core.length >= 10 && !WordFrequencies.contains(core)) return@any true
-            core.length >= 6 && splitInTwo(core) != null
+            if (core.length >= 6 && splitInTwo(core) != null) return@any true
+            // короткие слипшиеся пары: «Ноя» -> «Но я», «лианна» -> «ли Анна»
+            core.length in 3..7 && splitShort(core, atLineStart = i == 0) != null
         }
     }
 
@@ -69,20 +100,25 @@ object WordSplitter {
         val prepared = toCyrillic(line).trim()
         if (prepared.isEmpty()) return prepared
         val out = ArrayList<String>(8)
-        for (piece in prepared.split(' ')) {
-            if (piece.isBlank()) continue
-            out.add(fixPiece(piece))
+        val pieces = prepared.split(' ').filter { it.isNotBlank() }
+        for ((i, piece) in pieces.withIndex()) {
+            out.add(fixPiece(piece, atLineStart = i == 0))
         }
         return out.joinToString(" ")
     }
 
     /** Правит один «кусок» между пробелами: пунктуацию не ломает, дефисы не рвёт. */
-    private fun fixPiece(piece: String): String {
+    private fun fixPiece(piece: String, atLineStart: Boolean = false): String {
         if (piece.contains('-')) return piece          // «ха-ха-ха», «кто-то» — не трогаем
         val core = cleanToken(piece)
-        if (core.isEmpty() || WordFrequencies.contains(core)) return piece
+        if (core.isEmpty()) return piece
         val lead = piece.takeWhile { !it.isLetterOrDigit() }
         val trail = piece.takeLastWhile { !it.isLetterOrDigit() }
+        // 0) короткая частица приклеена к слову: «Ноя» -> «Но я», «лианна» -> «ли Анна».
+        //    Проверяем ДО словаря: «ноя» в словаре есть, но с частотой 223 против 5 000 000 у «я» —
+        //    такие редкие «слова» в словаре просто мусор корпуса, и склейку надо рвать.
+        splitShort(core, atLineStart)?.let { return lead + it + trail }
+        if (WordFrequencies.contains(core)) return piece
         // 1) слиплось несколько слов: «тыдолжна» -> «ты должна» (одна граница)
         splitInTwo(core)?.let { return lead + it + trail }
         // 2) длинный слипшийся кусок: полный DP по словарю
@@ -91,6 +127,60 @@ object WordSplitter {
             if (split.contains(' ')) return lead + split + trail
         }
         return piece
+    }
+
+    /**
+     * Короткая склейка «частица + слово»: «ноя» -> «но я», «лианна» -> «ли анна».
+     *
+     * Правила намеренно узкие, чтобы не рвать имена:
+     *  - режем только токен, которого нет в словаре (3–7 букв);
+     *  - первая часть — двухбуквенная частица (но, не, же, ли, то) или однобуквенная (в, к, с…);
+     *  - хвост — словарное слово; однобуквенный хвост («Ноя» -> «Но я») разрешён только
+     *    в начале строки, иначе «Лия» превратилось бы в «ли я» посреди реплики.
+     */
+    fun splitShort(core: String, atLineStart: Boolean = false): String? {
+        if (!WordFrequencies.isLoaded) return null
+        val s = core.lowercase().replace('ё', 'е')
+        if (s.length !in 3..7) return null
+        val inDict = WordFrequencies.contains(s)
+        var best: String? = null
+        var bestScore = Double.NEGATIVE_INFINITY
+
+        // двухбуквенная частица: «но|я», «ли|анна»
+        if (s.length >= 3) {
+            val l = s.substring(0, 2)
+            val r = s.substring(2)
+            if (l in PARTICLES) {
+                val tailOk = when {
+                    r.length == 1 -> atLineStart && r[0] in TAIL_SINGLES
+                    else -> WordFrequencies.contains(r)
+                }
+                if (tailOk) {
+                    val tailScore = if (r.length == 1) {
+                        if (WordFrequencies.contains(r)) WordFrequencies.logProb(r) else -6.0
+                    } else WordFrequencies.logProb(r)
+                    val score = WordFrequencies.logProb(l) + tailScore
+                    if (score > bestScore) { bestScore = score; best = "$l $r" }
+                }
+            }
+        }
+        // однобуквенная частица + длинный хвост: «вэтом» -> «в этом».
+        // Порог 6 букв — чтобы не портить короткие имена («Ирис» не «и рис»).
+        if (s.length >= 6) {
+            val l = s[0]
+            val r = s.substring(1)
+            if (l in SHORT_PARTICLES && r.length >= 4 && WordFrequencies.contains(r)) {
+                val score = WordFrequencies.logProb(l.toString()) + WordFrequencies.logProb(r)
+                if (score > bestScore) { bestScore = score; best = "$l $r" }
+            }
+        }
+        if (best == null) return null
+        if (s in KEEP_AS_IS) return null
+        // Словарное слово трогаем только если оно редкое И разбиение заметно вероятнее
+        // («ноя» 223 против «но я»): иначе рискуем испортить нормальный текст.
+        if (inDict && (WordFrequencies.count(s) >= RARE_COUNT ||
+                bestScore <= WordFrequencies.logProb(s) + MIN_GAIN)) return null
+        return best
     }
 
     /**
