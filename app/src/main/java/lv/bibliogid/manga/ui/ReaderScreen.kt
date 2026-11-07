@@ -638,7 +638,7 @@ private fun FramesSheet(vm: AppViewModel) {
             )
             Slider(
                 value = vm.frameOpacity,
-                onValueChange = { vm.setFrameOpacity(it) },
+                onValueChange = { vm.applyFrameOpacity(it) },
                 valueRange = 0.15f..1f,
                 enabled = vm.framesEnabled
             )
@@ -660,7 +660,7 @@ private fun FramesSheet(vm: AppViewModel) {
                 options.forEach { (key, label) ->
                     FilterChip(
                         selected = vm.frameShape == key,
-                        onClick = { vm.setFrameShape(key) },
+                        onClick = { vm.applyFrameShape(key) },
                         label = { Text(label, style = MaterialTheme.typography.labelSmall) }
                     )
                 }

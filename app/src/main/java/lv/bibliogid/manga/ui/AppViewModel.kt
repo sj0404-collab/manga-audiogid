@@ -195,12 +195,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** Панель «Рамки»: прозрачность, форма, вкл/выкл. */
     var showFramesPanel by mutableStateOf(false)
 
-    fun setFrameOpacity(v: Float) {
+    fun applyFrameOpacity(v: Float) {
         frameOpacity = v.coerceIn(0.15f, 1f)
         settings.frameOpacity = frameOpacity
     }
 
-    fun setFrameShape(shape: String) {
+    fun applyFrameShape(shape: String) {
         frameShape = shape
         settings.frameShape = shape
         statusMessage = "Рамки: " + when (shape) {
