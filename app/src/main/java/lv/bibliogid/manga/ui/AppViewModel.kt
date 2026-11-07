@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.speech.tts.TextToSpeech
 import android.util.LruCache
+import lv.bibliogid.manga.core.ocr.CrossPage
 import lv.bibliogid.manga.core.text.SpokenText
 import lv.bibliogid.manga.core.util.AppLog
 import androidx.lifecycle.AndroidViewModel
@@ -213,9 +214,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun applyBookSettings() {
         val title = currentManga?.entry?.title ?: return
         val applied = settings.applyBook(title)
+        // С этого момента любые изменения «книжных» настроек пишутся в профиль этой книги
+        // автоматически (Settings.touchBook) — кнопка «Запомнить настройки книги» не нужна.
+        settings.bindBook(title)
         framesEnabled = settings.showTextFrames
         continuousMode = settings.continuousScroll
-        AppLog.d("settings", "настройки книги «$title»: " + if (applied) "применены" else "по умолчанию")
+        if (!applied && settings.perBookSettings) {
+            // книга открыта впервые — запоминаем текущие настройки как её профиль
+            settings.saveBook(title)
+        }
+        AppLog.d(
+            "settings",
+            "настройки книги «$title»: " +
+                if (applied) "применены (привязка включена)" else "по умолчанию (запомнены)"
+        )
     }
 
     fun saveBookSettings() {
@@ -255,6 +267,58 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Страница, к которой относится текущий script (нужна для ключей «прочитано»). */
     private var scriptPage: Int = 0
+
+    /**
+     * Ключ страницы, первая реплика которой УЖЕ озвучена вместе с предыдущей
+     * (склейка через границу страниц, см. [CrossPage]). Когда эта страница станет
+     * текущей, её первая реплика пропускается — иначе фраза прозвучит дважды.
+     */
+    private var headSpokenKey: String? = null
+
+    /**
+     * Сценарий озвучки страницы с учётом границ страниц:
+     *  - если прошлая страница уже допела первую реплику этой — пропускаем её;
+     *  - если последняя реплика не закончена, а следующая страница уже распознана
+     *    (кеш/предзагрузка), хвост озвучивается вместе с её началом.
+     */
+    private fun scriptFor(text: PageText, index: Int): List<TtsUtterance> {
+        val manga = currentManga
+        val chapter = currentChapter
+        val reps = text.replicas
+        if (reps.isEmpty()) return emptyList()
+        if (manga == null || chapter == null) return TtsScript.build(reps, settings.ttsSpeed)
+
+        val key = cacheKey(manga, chapter, index)
+        val skipFirst = headSpokenKey == key
+        if (skipFirst) headSpokenKey = null
+
+        var mergedTail: String? = null
+        val prevRep = reps.lastOrNull()
+        // на диск/в кеш за следующей страницей ходим ТОЛЬКО если хвост не закончен
+        if (prevRep != null && prevRep.openEnded && index + 1 < pageCount) {
+            val nextKey = cacheKey(manga, chapter, index + 1)
+            val next = textStore.load(nextKey)
+            val nextRep = next?.replicas?.firstOrNull { it.text.isNotBlank() }
+            if (CrossPage.canJoin(prevRep, nextRep)) {
+                mergedTail = CrossPage.join(prevRep!!.text, nextRep!!.text)
+                headSpokenKey = nextKey
+                AppLog.d(
+                    "tts",
+                    "склейка через страницу ${index + 1}→${index + 2}: " +
+                        "«${prevRep.text}» + «${nextRep.text}»"
+                )
+            }
+        }
+
+        val prepared = reps.mapIndexed { i, r ->
+            when {
+                skipFirst && i == 0 -> r.copy(text = "")
+                mergedTail != null && i == reps.lastIndex -> r.copy(text = mergedTail)
+                else -> r
+            }
+        }.filter { it.text.isNotBlank() }
+        return TtsScript.build(prepared, settings.ttsSpeed)
+    }
 
     /** Пользователь явно попросил повторить реплику — одноразовый пропуск защиты. */
     private var forceRepeat: Boolean = false
@@ -342,10 +406,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * распознанный текст подхватываться не должен — он собран прежним движком.
      */
     private fun cacheKey(manga: MangaItem, chapter: ChapterEntry, page: Int): String =
-        "${manga.entry.title}/${chapter.name}/$page/${settings.localEngine}-ocr24"
+        "${manga.entry.title}/${chapter.name}/$page/${settings.localEngine}-ocr25"
 
     private fun closeSource() {
         stopReading()
+        headSpokenKey = null
         runCatching { source?.close() }
         source = null
         pageCache.evictAll()
@@ -398,6 +463,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun goToPage(index: Int) {
         if (index == pageIndex) return
+        // ручной прыжок: склейка «хвост прошлой страницы + начало этой» больше не действует
+        headSpokenKey = null
         pageIndex = index.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
         val manga = currentManga
         val chapter = currentChapter
@@ -609,8 +676,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         stopReadingInternal()
         speaking = true
         paused = false
-        script = TtsScript.build(text.replicas, settings.ttsSpeed)
         scriptPage = pageIndex
+        script = scriptFor(text, pageIndex)
         if (script.isEmpty()) {
             speaking = false
             statusMessage = "Нечего читать: на странице нет распознанного текста"
@@ -706,8 +773,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
             switchPageSilently(next, text)
             statusMessage = null
-            script = TtsScript.build(text.replicas, settings.ttsSpeed)
             scriptPage = next
+            script = scriptFor(text, next)
             if (script.isEmpty()) { advanceToNextPage(); return@launch }
             playIndex = 0
             runFrom(0)
@@ -825,8 +892,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             maybeAutoOcr()
             return
         }
-        script = TtsScript.build(text.replicas, settings.ttsSpeed)
         scriptPage = pageIndex
+        script = scriptFor(text, pageIndex)
         val from = script.indexOfFirst { !spokenKeys.containsKey(utteranceKey(scriptPage, it)) }
         if (from < 0) {
             AppLog.d("tts", "стр.${pageIndex + 1}: все реплики уже озвучены — повтор не начинаю")

@@ -49,11 +49,11 @@ class Settings(context: Context) {
     /** 0.25 … 2.0 */
     var ttsSpeed: Float
         get() = prefs.getFloat("tts_speed", 1.0f)
-        set(v) { prefs.edit().putFloat("tts_speed", v).apply() }
+        set(v) { prefs.edit().putFloat("tts_speed", v).apply(); touchBook() }
 
     var ttsAutoPageTurn: Boolean
         get() = prefs.getBoolean("tts_auto_turn", true)
-        set(v) { prefs.edit().putBoolean("tts_auto_turn", v).apply() }
+        set(v) { prefs.edit().putBoolean("tts_auto_turn", v).apply(); touchBook() }
 
     var readMode: String
         get() = prefs.getString("read_mode", "MANGA_RTL") ?: "MANGA_RTL"
@@ -61,7 +61,7 @@ class Settings(context: Context) {
 
     var continuousScroll: Boolean
         get() = prefs.getBoolean("continuous", false)
-        set(v) { prefs.edit().putBoolean("continuous", v).apply() }
+        set(v) { prefs.edit().putBoolean("continuous", v).apply(); touchBook() }
 
     var keepCaps: Boolean
         get() = prefs.getBoolean("keep_caps", false)
@@ -79,7 +79,7 @@ class Settings(context: Context) {
     /** Показывать рамки найденного текста поверх страницы. */
     var showTextFrames: Boolean
         get() = prefs.getBoolean("show_frames", true)
-        set(v) { prefs.edit().putBoolean("show_frames", v).apply() }
+        set(v) { prefs.edit().putBoolean("show_frames", v).apply(); touchBook() }
 
     /** Скрывать меню/плеер, пока идёт озвучка (по тапу возвращаются на 3 секунды). */
     var hideUiWhileReading: Boolean
@@ -90,6 +90,33 @@ class Settings(context: Context) {
     var perBookSettings: Boolean
         get() = prefs.getBoolean("per_book_settings", true)
         set(v) { prefs.edit().putBoolean("per_book_settings", v).apply() }
+
+    /**
+     * Книга, открытая прямо сейчас. Нужна, чтобы ЛЮБОЕ изменение «книжных» настроек
+     * (скорость, авто-перелистывание, рамки, пауза на немой странице) сразу
+     * записывалось за этой книгой — без кнопки «Запомнить настройки книги».
+     */
+    @Volatile private var activeBook: String? = null
+
+    /** Пока применяем профиль книги — обратно не пишем, иначе затрём его сами. */
+    @Volatile private var applying = false
+
+    fun bindBook(title: String?) {
+        activeBook = title?.takeIf { it.isNotBlank() }
+    }
+
+    val boundBook: String? get() = activeBook
+
+    private fun touchBook() {
+        if (applying) return
+        val t = activeBook ?: return
+        if (!perBookSettings) return
+        saveBook(t)
+    }
+
+    /** Есть ли у книги свой профиль настроек. */
+    fun hasBook(title: String): Boolean =
+        title.isNotBlank() && prefs.contains("${key(title)}speed")
 
     /** Сохраняет текущие настройки чтения как настройки конкретной книги. */
     fun saveBook(title: String) {
@@ -109,11 +136,16 @@ class Settings(context: Context) {
         if (!perBookSettings || title.isBlank()) return false
         val k = key(title)
         if (!prefs.contains("${k}speed")) return false
-        ttsSpeed = prefs.getFloat("${k}speed", ttsSpeed)
-        ttsAutoPageTurn = prefs.getBoolean("${k}autoturn", ttsAutoPageTurn)
-        showTextFrames = prefs.getBoolean("${k}frames", showTextFrames)
-        continuousScroll = prefs.getBoolean("${k}continuous", continuousScroll)
-        emptyPageDwellSec = prefs.getFloat("${k}dwell", emptyPageDwellSec)
+        applying = true
+        try {
+            ttsSpeed = prefs.getFloat("${k}speed", ttsSpeed)
+            ttsAutoPageTurn = prefs.getBoolean("${k}autoturn", ttsAutoPageTurn)
+            showTextFrames = prefs.getBoolean("${k}frames", showTextFrames)
+            continuousScroll = prefs.getBoolean("${k}continuous", continuousScroll)
+            emptyPageDwellSec = prefs.getFloat("${k}dwell", emptyPageDwellSec)
+        } finally {
+            applying = false
+        }
         return true
     }
 
@@ -137,7 +169,7 @@ class Settings(context: Context) {
     /** Сколько секунд стоять на странице, где нет распознанного текста (чтобы не терять сюжет). */
     var emptyPageDwellSec: Float
         get() = prefs.getFloat("empty_dwell_sec", 3.0f)
-        set(v) { prefs.edit().putFloat("empty_dwell_sec", v).apply() }
+        set(v) { prefs.edit().putFloat("empty_dwell_sec", v).apply(); touchBook() }
 
     var showReplicaNumbers: Boolean
         get() = prefs.getBoolean("show_numbers", true)

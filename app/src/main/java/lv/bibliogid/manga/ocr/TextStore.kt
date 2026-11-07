@@ -43,6 +43,7 @@ class TextStore(context: Context) {
                         ),
                         needsReview = o.optBoolean("nr", false),
                         bandIndex = o.optInt("b", 0),
+                        openEnded = o.optBoolean("oe", false),
                         lines = run {
                             val ln = o.optJSONArray("ln") ?: return@run emptyList()
                             (0 until ln.length()).mapNotNull { k ->
@@ -85,6 +86,7 @@ class TextStore(context: Context) {
                     put("ty", r.type.name)
                     put("nr", r.needsReview)
                     put("b", r.bandIndex)
+                    if (r.openEnded) put("oe", true)
                     if (r.box.area > 0f) {
                         put("bl", r.box.left.toDouble())
                         put("bt", r.box.top.toDouble())

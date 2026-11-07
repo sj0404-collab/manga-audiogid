@@ -19,7 +19,14 @@ data class Replica(
      * рамкой (иначе кажется, что страница перепрыгнула реплику), но читать нечего —
      * голосом оно не озвучивается.
      */
-    val silence: Boolean = false
+    val silence: Boolean = false,
+    /**
+     * Реплика «не закончена»: в сыром OCR в конце нет точки/!/?/многоточия — фраза
+     * продолжается. Обычно она продолжается на следующей странице («Но разве.» на стр.2
+     * и «Наш лидер уже недостаточно плох?» на стр.3) — такую пару надо озвучить одним
+     * предложением, см. CrossPage.
+     */
+    val openEnded: Boolean = false
 )
 
 data class PageText(
@@ -128,6 +135,10 @@ class PageTextBuilder(
 
         ordered.forEachIndexed { i, regionRaw ->
             val region = if (grower != null) regionRaw.copy(box = grower(regionRaw.box)) else regionRaw
+            // «Фраза не закончена» смотрим ДО нормализатора: он дописывает точку,
+            // и без этого признака склейка через границу страниц невозможна.
+            val rawTail = region.rawLines.joinToString(" ").trim().lastOrNull { !it.isWhitespace() }
+            val openEnded = rawTail != null && rawTail !in ".!?…»\"'"
             rawLines += region.rawLines.count { it.isNotBlank() }
             val res = normalizer.normalize(region.rawLines)
             cleanLines += res.replicas.size
@@ -149,7 +160,8 @@ class PageTextBuilder(
                             type = region.type,
                             box = region.box,
                             lines = region.lineBoxes,
-                            silence = true
+                            silence = true,
+                            openEnded = openEnded
                         )
                     )
                     lv.bibliogid.manga.core.util.AppLog.d(
@@ -175,7 +187,8 @@ class PageTextBuilder(
                         type = region.type,
                         box = region.box,
                         needsReview = true,
-                        lines = region.lineBoxes
+                        lines = region.lineBoxes,
+                        openEnded = openEnded
                     )
                 )
                 return@forEachIndexed
@@ -195,7 +208,8 @@ class PageTextBuilder(
                         type = region.type,
                         box = region.box,
                         lines = region.lineBoxes,
-                        silence = true
+                        silence = true,
+                        openEnded = openEnded
                     )
                 )
                 lv.bibliogid.manga.core.util.AppLog.d(
@@ -224,7 +238,8 @@ class PageTextBuilder(
                         type = region.type,
                         box = region.box,
                         needsReview = joined.count { it.isLetter() } < 3,
-                        lines = region.lineBoxes
+                        lines = region.lineBoxes,
+                        openEnded = openEnded
                     )
                 )
             }
